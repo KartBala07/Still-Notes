@@ -1,0 +1,9 @@
+export type Note={id:string;title:string;subject:string;text:string;summary:string;source:string;created:number;pinned?:boolean;asset?:string;assets?:string[]};
+export type Card={id:string;front:string;back:string;quote:string;due:number;interval:number};
+export type Question={id:string;prompt:string;options:string[];answer:number;explanations:string[];quote:string};
+export type Deck={id:string;title:string;noteIds:string[];cards:Card[];questions:Question[];created:number};
+export type Attempt={id:string;deckId:string;title:string;answers:number[];score:number;total:number;created:number;questions:Question[]};
+export type StudyEvent={id:string;title:string;date:string;noteId:string;done:boolean};
+export type Settings={provider:'groq'|'grok';model:string;voiceId:string;slang:boolean;brainrot:boolean;theme:'light'|'dark'|'system';hasAiKey?:boolean;hasFishKey?:boolean};
+export type User={id:string;email:string;name:string;settings:Settings};
+export type Data={notes:Note[];decks:Deck[];attempts:Attempt[];events:StudyEvent[]};
