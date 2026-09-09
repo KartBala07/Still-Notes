@@ -17,13 +17,13 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 
 ## Hosting
 
-The cloud deployment is prepared for `https://still-notes.swathibala988.chatgpt.site` but is **not live yet**. The cloud source-hosting service returned HTTP 500 while receiving the final update. After deployment, the backend runs as a Cloudflare-compatible Worker, with D1 for account/study data and R2 for audio, independently of a user’s laptop.
+The app is live on [GitHub Pages](https://kartbala07.github.io/Still-Notes/) and at its [cloud origin](https://still-notes.swathibala988.chatgpt.site). Anyone can create an account; each person’s lessons, study data, calendar and API keys stay scoped to that account.
 
-The owner account and encrypted provider credentials are configured in private runtime secrets. The owner account is initialized on the first API request after the finished backend is deployed.
+GitHub Pages hosts the React frontend. The backend runs as a Cloudflare-compatible Worker with D1 for account/study data and R2 for audio, independently of a user’s laptop. The same full source is stored in this repository. `.github/workflows/pages.yml` checks and publishes frontend changes. GitHub Pages cannot execute the private backend.
 
-GitHub stores the complete source. `.github/workflows/pages.yml` builds and publishes the same React frontend to GitHub Pages. GitHub Pages serves static files and cannot run the private backend.
+The owner account and encrypted provider credentials are configured in private runtime secrets. Initialization is idempotent and does not overwrite existing account settings or passwords. New users add their own provider keys in Settings.
 
-For the first Pages deployment, a repository administrator must open **Settings → Pages → Build and deployment → Source → GitHub Actions**, then rerun the workflow. The connector used to create this repository cannot change the Pages administration setting. The cloud host must also be opened to public account sign-in before other people can use the GitHub frontend. That audience change is awaiting explicit approval. The frontend is configured for `https://kartbala07.github.io/Still-Notes/` and connects to the cloud backend through an explicit CORS allowlist.
+GitHub Pages is enabled using GitHub Actions. The frontend connects to the cloud backend through an explicit CORS allowlist for `https://kartbala07.github.io`. Public account sign-up was approved by the owner; study content is not made public.
 
 The hosted frontend uses an HttpOnly Secure SameSite=Lax session cookie. The cross-origin GitHub Pages frontend uses a bearer session kept in tab-scoped sessionStorage so it works when browsers block third-party cookies. No product data or API keys are stored in browser storage.
 
