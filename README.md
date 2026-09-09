@@ -17,7 +17,9 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 
 ## Hosting
 
-The owner-private application and backend are deployed at https://still-notes.swathibala988.chatgpt.site . The backend runs as a Cloudflare-compatible Worker, with D1 for account/study data and R2 for audio. It stays available when a user's laptop is off.
+The cloud deployment is prepared for `https://still-notes.swathibala988.chatgpt.site` but is **not live yet**. The cloud source-hosting service returned HTTP 500 while receiving the final update. After deployment, the backend runs as a Cloudflare-compatible Worker, with D1 for account/study data and R2 for audio, independently of a user’s laptop.
+
+The owner account and encrypted provider credentials are configured in private runtime secrets. The owner account is initialized on the first API request after the finished backend is deployed.
 
 GitHub stores the complete source. `.github/workflows/pages.yml` builds and publishes the same React frontend to GitHub Pages. GitHub Pages serves static files and cannot run the private backend.
 
