@@ -31,7 +31,7 @@ test('one user cannot list, edit, organize or delete another user’s lesson',as
  assert.equal((await call('state','GET',undefined,a.token)).body.notes[0].text,note.text);
 });
 test('API keys remain encrypted and absent from settings responses and exports',async()=>{
- const r=await call('settings','PUT',{provider:'groq',model:'llama-3.3-70b-versatile',voiceId:'',theme:'dark',slang:false,brainrot:false,aiKey:'private-test-key'},a.token);assert.equal(r.status,200);assert.equal(r.body.user.settings.hasAiKey,true);assert.equal(JSON.stringify(r.body).includes('private-test-key'),false);
+ const r=await call('settings','PUT',{provider:'groq',model:'openai/gpt-oss-120b',voiceId:'',theme:'dark',slang:false,brainrot:false,aiKey:'private-test-key'},a.token);assert.equal(r.status,200);assert.equal(r.body.user.settings.hasAiKey,true);assert.equal(JSON.stringify(r.body).includes('private-test-key'),false);
  const stored=await db.prepare('SELECT keys FROM users WHERE id=?').bind(a.user.id).first<{keys:string}>();assert.equal(stored!.keys.includes('private-test-key'),false);
  assert.equal(JSON.stringify((await call('export','GET',undefined,a.token)).body).includes('private-test-key'),false);
 });

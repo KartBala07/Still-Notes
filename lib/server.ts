@@ -5,7 +5,7 @@ import type { Note,Deck,Question,Settings,StudyEvent } from './types';
 type Env={DB:D1Database;BUCKET:R2Bucket;APP_ENCRYPTION_KEY:string;OWNER_BOOTSTRAP?:string};
 type Account={id:string;email:string;name:string;password:string;settings:string;keys:string};
 const E=()=>env as unknown as Env;
-const defaults:Settings={provider:'groq',model:'llama-3.3-70b-versatile',voiceId:'',slang:false,brainrot:false,theme:'system'};
+const defaults:Settings={provider:'groq',model:'openai/gpt-oss-120b',voiceId:'',slang:false,brainrot:false,theme:'system'};
 const text=z.string().trim().min(1).max(90000);
 const settingsSchema=z.object({provider:z.enum(['groq','grok']),model:z.string().trim().min(1).max(100),voiceId:z.string().max(120),slang:z.boolean(),brainrot:z.boolean(),theme:z.enum(['light','dark','system']),aiKey:z.string().max(300).optional(),fishKey:z.string().max(300).optional(),clearAi:z.boolean().optional(),clearFish:z.boolean().optional()});
 class Failure extends Error{constructor(public status:number,message:string){super(message)}}
