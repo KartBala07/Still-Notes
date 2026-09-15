@@ -8,14 +8,20 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 - Light, dark and system themes; desktop sidebar, keyboard shortcuts and responsive layouts.
 - Microphone recording in standalone 10-minute clips, downloadable backups, Fish Audio transcription and optional read-aloud.
 - PDF, DOCX, text, Markdown, CSV and subtitle imports. Public Google Docs/Sheets links and YouTube captions where accessible. Private Google files work through downloaded exports. Scanned PDFs need OCR before import.
-- Groq and xAI Grok settings, editable encrypted API keys, configurable model and Fish Audio voice ID.
+- Groq, xAI Grok, DeepSeek and OpenRouter settings, separate encrypted keys per provider, live model lists and connection checks. DeepSeek is paid; OpenRouter offers a separate free-model router subject to its limits.
+- Refreshed glass dashboard, daily original study thoughts, attributed landscape photography and scroll reveals that respect reduced motion.
+- Password-reset email flow with hashed, single-use, 30-minute tokens and session revocation; requires a configured email sender.
 - AI-organized notes, flashcards, quizzes, timed AP-style multiple-choice practice and detailed rationales for every option.
 - Match and Crash study games, spaced flashcard review, mistake notebook, focus timer and study calendar.
 - Chat grounded in selected lessons, with verified exact source quotations and no web tools.
 - Optional Gen Z explanations and original runner, block parkour and driving animations. These are not the commercial Subway Surfers, Minecraft or GTA games.
 - JSON account export and Markdown lesson export.
 
-## Hosting
+## Convex migration
+
+A Convex hosting target is prepared on this branch. See [Convex setup and account continuity](docs/CONVEX.md). The UI can be served directly from the deployment’s `.convex.site` address. Deployment needs access to the intended Convex project; no new public URL is claimed here. Transition mode preserves current accounts and data in the existing backend until a verified database transfer.
+
+## Current hosting
 
 The app is live on [GitHub Pages](https://kartbala07.github.io/Still-Notes/) and at its [cloud origin](https://still-notes.swathibala988.chatgpt.site). Anyone can create an account; each person’s lessons, study data, calendar and API keys stay scoped to that account.
 
@@ -50,9 +56,21 @@ Required runtime binding names: `DB` (D1), `BUCKET` (R2). Required secret: `APP_
 - API calls require valid provider credentials and credits. Read-aloud also requires a Fish Audio voice ID. Speech transcription does not require a voice ID.
 - AI output can be wrong. Quotes are checked against the source, but this cannot prove every inference. Review generated material. AP-style questions are independent practice, not official College Board questions or a guaranteed AP syllabus assessment.
 - Public Google export and YouTube caption access can fail because of source permissions or provider restrictions; file upload / transcript paste remains available.
-- Calendar sessions are in-app plans; external calendar sync, email reminders, password-reset email and email verification are not configured.
+- Calendar sessions are in-app plans; external calendar sync, email reminders and email verification are not configured. Password-reset delivery requires the email configuration below.
 - Cloud sync requires an internet connection. New devices sign in to the same account. This release does not provide offline editing.
 
 ## Verification
 
 Tests cover authentication, logout, origin restrictions, private note isolation, encryption, hidden keys, server-side grading and spaced-review ownership. Frontend and Worker builds are checked separately. Physical-device microphone behavior still depends on browser permissions and hardware.
+
+## Password reset and AI configuration
+
+Set `RESEND_API_KEY`, `AUTH_EMAIL_FROM` (an address on a verified sender domain) and `PUBLIC_APP_URL` (the full HTTPS frontend URL, including `/Still-Notes/` if using Pages) in the active backend environment. Never commit these secrets. No sender is configured by source code alone. The endpoint gives the same response for known and unknown addresses, limits requests, stores only token hashes, rejects replay/expiry and revokes sessions when a reset succeeds. Test real delivery on the intended domain before announcing password recovery as live.
+
+In transition mode, configure email and deploy the new shared backend **on the existing Worker host** before releasing this frontend. Bridging to an old backend does not make the new AI or reset endpoints available. Native Convex mode needs these variables on Convex instead.
+
+In Settings, select a provider, add its key, and choose **Save & test connection**. A provider switch does not send another provider’s saved key. The key bank preserves existing credentials while supporting separate keys per vendor. Real provider access still depends on an active key, available model, balance and rate limits.
+
+## Design credits
+
+Interface direction inspired by [AI Chatbot Interface — ChatGPT Redesign on Dribbble](https://dribbble.com/shots/24044559-AI-Chatbot-Interface-ChatGpt-Redesign). Landscape photo by [Suhyeon Choi on Unsplash](https://unsplash.com/photos/a-green-field-with-mountains-in-the-background-o4uW0_IF2Sk), bundled locally for consistent loading. Daily thoughts are original Still Notes text, not attributed quotations.

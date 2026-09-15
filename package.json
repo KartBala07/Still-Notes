@@ -14,7 +14,11 @@
     "db:generate": "drizzle-kit generate",
     "build:pages": "vite build --config vite.pages.config.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "build:convex": "vite build --config vite.convex.config.ts && node scripts/package-convex-web.mjs",
+    "dev:convex": "npm run build:convex && convex dev",
+    "deploy:convex": "npm run build:convex && convex deploy",
+    "test:convex": "vitest run --config vitest.convex.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -23,6 +27,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "^1.1.1",
+    "convex": "^1.45.0",
     "date-fns": "^4.4.0",
     "drizzle-orm": "0.45.2",
     "embla-carousel-react": "^8.6.0",
@@ -47,12 +52,14 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@edge-runtime/vm": "^5.0.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
+    "convex-test": "^0.0.58",
     "drizzle-kit": "0.31.10",
     "esbuild": "^0.28.2",
     "eslint": "9.39.4",
@@ -65,6 +72,7 @@
     "typescript": "5.9.3",
     "vinext": "1.0.0-beta.5",
     "vite": "8.0.13",
+    "vitest": "^5.0.0",
     "wrangler": "4.92.0"
   },
   "type": "module"

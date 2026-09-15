@@ -1,0 +1,60 @@
+name: Deploy Still Notes to Convex
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'convex/**'
+      - 'lib/**'
+      - 'app/**'
+      - 'components/**'
+      - 'web/**'
+      - 'public/**'
+      - 'scripts/package-convex-web.mjs'
+      - 'vite.convex.config.ts'
+      - 'package*.json'
+      - '.github/workflows/convex.yml'
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: convex-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:convex
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:convex
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: convex-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check deployment access
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo "::error::Add the production Convex deploy key as the CONVEX_DEPLOY_KEY repository secret. Never add it to source files."
+            exit 1
+          fi
+      - run: npm ci
+      - name: Publish frontend and HTTP backend
+        run: npm run deploy:convex -- --yes
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

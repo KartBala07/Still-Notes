@@ -1,85 +1,2196 @@
-'use client';
-import {useEffect,useRef,useState,useCallback} from 'react';
-import {BookOpen,Layers,CalendarDays,MessageCircle,Settings as SettingsIcon,Plus,Search,Moon,Sun,Mic,Upload,Link as LinkIcon,ArrowUpRight,ArrowRight,Play,Pause,Square,Sparkles,Pin,Trash2,Download,Volume2,Check,ChevronLeft,ChevronRight,LogOut,Cloud,Command,FileText,Timer,Brain,GraduationCap,Gamepad2,X,Headphones,LoaderCircle,PanelLeft} from 'lucide-react';
-import {Sidebar,SidebarProvider,SidebarHeader,SidebarContent,SidebarFooter,SidebarMenu,SidebarMenuItem,SidebarMenuButton,SidebarTrigger} from '@/components/ui/sidebar';
-import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
-import {AlertDialog,AlertDialogContent,AlertDialogHeader,AlertDialogTitle,AlertDialogDescription,AlertDialogFooter,AlertDialogCancel,AlertDialogAction} from '@/components/ui/alert-dialog';
-import {Tabs,TabsList,TabsTrigger,TabsContent} from '@/components/ui/tabs';
-import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from '@/components/ui/select';
-import {Switch} from '@/components/ui/switch';
-import {Checkbox} from '@/components/ui/checkbox';
-import {Toaster,toast} from 'sonner';
-import {Calendar} from '@/components/ui/calendar';
-import type {Data,Note,Deck,Attempt,Settings,User,StudyEvent} from '@/lib/types';
-import {api,request,loadSession,setSession,extract,download,noteMarkdown} from '@/lib/client';
-import {StudyPlayer,Brainrot} from './study';
-const initial:Data={notes:[],decks:[],attempts:[],events:[]};
-const defaultSettings:Settings={provider:'groq',model:'openai/gpt-oss-120b',voiceId:'',slang:false,brainrot:false,theme:'system'};
-function SelectBox({value,onChange,options}:{value:string;onChange:(s:string)=>void;options:[string,string][]}){return <Select value={value} onValueChange={onChange}><SelectTrigger className="field"><SelectValue/></SelectTrigger><SelectContent>{options.map(([v,t])=><SelectItem value={v} key={v}>{t}</SelectItem>)}</SelectContent></Select>}
-export function Busy({children}:{children:React.ReactNode}){return <span className="inline"><LoaderCircle className="spin" size={16}/>{children}</span>}
-function Mark({text}:{text:string}){return <div className="prose-note">{text.split('\n').map((line,i)=>line.startsWith('### ')?<h3 key={i}>{line.slice(4)}</h3>:line.startsWith('## ')?<h2 key={i}>{line.slice(3)}</h2>:line.startsWith('# ')?<h2 key={i}>{line.slice(2)}</h2>:<p key={i}>{line.split(/(\*\*.*?\*\*)/g).map((part,j)=>part.startsWith('**')?<strong key={j}>{part.slice(2,-2)}</strong>:part)}{!line&&<br/>}</p>)}</div>}
-export default function StillNotes(){
- const [user,setUser]=useState<User|null>(null),[data,setData]=useState<Data>(initial),[loading,setLoading]=useState(true),[page,setPage]=useState('notes'),[search,setSearch]=useState(''),[filter,setFilter]=useState('all'),[selected,setSelected]=useState<string|null>(null),[modal,setModal]=useState(''),[busy,setBusy]=useState(''),[deleteNote,setDeleteNote]=useState<Note|null>(null),[player,setPlayer]=useState<{deck:Deck;mode:string}|null>(null),[focus,setFocus]=useState(false),[focusSeconds,setFocusSeconds]=useState(25*60);
- const theme=user?.settings.theme||'system';
- useEffect(()=>{const media=matchMedia('(prefers-color-scheme: dark)');const update=()=>document.documentElement.classList.toggle('dark',theme==='dark'||(theme==='system'&&media.matches));update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update)},[theme]);
- const refresh=useCallback(async()=>setData(await api<Data>('state')),[]);
- useEffect(()=>{loadSession();api<{user:User}>('auth/me').then(async r=>{setUser(r.user);await refresh()}).catch(()=>{}).finally(()=>setLoading(false))},[refresh]);
- useEffect(()=>{if(!user)return;const fn=()=>{if(document.visibilityState==='visible')refresh().catch(()=>{})};const t=setInterval(fn,30000);document.addEventListener('visibilitychange',fn);return()=>{clearInterval(t);document.removeEventListener('visibilitychange',fn)}},[user,refresh]);
- useEffect(()=>{if(!focus)return;const t=setInterval(()=>setFocusSeconds(s=>{if(s<=1){setFocus(false);toast.success('Focus session finished. Take a five-minute break.');return 25*60}return s-1}),1000);return()=>clearInterval(t)},[focus]);
- useEffect(()=>{const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();document.getElementById('search-lessons')?.focus()}if((e.metaKey||e.ctrlKey)&&e.key==='n'){e.preventDefault();setModal('lesson')}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[]);
- async function act(name:string,fn:()=>Promise<void>){setBusy(name);try{await fn()}catch(e){toast.error((e as Error).message)}finally{setBusy('')}}
- const note=data.notes.find(n=>n.id===selected);const due=data.decks.reduce((n,d)=>n+d.cards.filter(c=>c.due<=Date.now()).length,0);const accuracy=data.attempts.length?Math.round(data.attempts.reduce((n,a)=>n+a.score,0)/data.attempts.reduce((n,a)=>n+a.total,0)*100):null;
- const filtered=data.notes.filter(n=>(filter!=='pinned'||n.pinned)&&(!search||[n.title,n.subject,n.text].join(' ').toLowerCase().includes(search.toLowerCase())));
- async function logout(){await api('auth/logout','POST');setSession('');setUser(null);setData(initial);setSelected(null);setPlayer(null)}
- if(loading)return <div className="loading-screen"><div className="brand-icon"><BookOpen/></div><Busy>Opening your workspace</Busy></div>;
- if(!user)return <><Auth onLogin={async(u,t)=>{setSession(t);setUser(u);await refresh()}}/><Toaster position="bottom-right" richColors/></>;
- return <SidebarProvider><Sidebar className="app-sidebar"><SidebarHeader><a className="brand" href="#" onClick={e=>e.preventDefault()}><span className="brand-icon"><BookOpen size={23}/></span><span>still<span className="brand-soft">notes</span><small>YOUR SPACE TO UNDERSTAND</small></span></a><button className="primary new-note" onClick={()=>setModal('lesson')}><Plus size={18}/>New lesson<span className="shortcut">⌘ N</span></button></SidebarHeader><SidebarContent><p className="nav-label">WORKSPACE</p><SidebarMenu>{[['notes','Your lessons',BookOpen],['study','Study studio',Layers],['calendar','Calendar',CalendarDays],['chat','Ask your notes',MessageCircle]].map(([id,title,Icon])=><SidebarMenuItem key={String(id)}><SidebarMenuButton className="nav-button" isActive={page===id} onClick={()=>{setPage(String(id));setPlayer(null)}}><Icon size={19}/><span>{String(title)}</span>{id==='study'&&due>0&&<b className="nav-badge">{due}</b>}</SidebarMenuButton></SidebarMenuItem>)}</SidebarMenu><div className="sidebar-focus"><span className="eyebrow"><Timer size={15}/>A LITTLE FOCUS</span><strong>{Math.floor(focusSeconds/60).toString().padStart(2,'0')}:{(focusSeconds%60).toString().padStart(2,'0')}</strong><span>One thing at a time.</span><button className="secondary" onClick={()=>setFocus(!focus)}>{focus?<Pause size={15}/>:<Play size={15}/>} {focus?'Pause session':'Start focusing'}</button></div></SidebarContent><SidebarFooter><SidebarMenu><SidebarMenuItem><SidebarMenuButton className="nav-button" isActive={page==='settings'} onClick={()=>setPage('settings')}><SettingsIcon size={19}/>Settings</SidebarMenuButton></SidebarMenuItem></SidebarMenu><div className="profile"><span className="avatar">{user.name.slice(0,1).toUpperCase()}</span><div><strong>{user.name}</strong><small><Cloud size={12}/>Private cloud workspace</small></div><button className="icon-button" aria-label="Sign out" onClick={()=>act('logout',logout)}><LogOut size={17}/></button></div></SidebarFooter></Sidebar>
- <main className="app-main"><header className="topbar"><div className="inline"><SidebarTrigger/><span className="muted">Workspace</span><span className="muted">/</span><strong>{page==='notes'?'Your lessons':page==='study'?'Study studio':page==='chat'?'Ask your notes':page==='calendar'?'Calendar':'Settings'}</strong></div><div className="inline"><span className="sync"><span/>Cloud connected</span><button className="icon-button" aria-label="Toggle dark mode" onClick={()=>act('theme',async()=>{const next={...user.settings,theme:document.documentElement.classList.contains('dark')?'light':'dark'};setUser((await api('settings','PUT',next)).user)})}>{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button></div></header>
- {page==='notes'&&<div className="workspace"><section className="workspace-heading"><div><span className="eyebrow">LESS CLUTTER. MORE CLARITY.</span><h1>Your lessons<span className="accent">.</span></h1><p>A quiet home for everything you’re learning.</p></div><div className="actions"><button className="secondary" onClick={()=>setModal('record')}><Mic size={17}/>Record lecture</button><button className="primary" onClick={()=>setModal('lesson')}><Plus size={17}/>Add material</button></div></section>
- <div className="overview-grid"><button className="overview-card sage" onClick={()=>{setPage('study');setPlayer(null)}}><span className="card-symbol"><Layers size={21}/></span><div><span>Ready to revisit</span><strong>{due}<small>flashcards due</small></strong></div><ArrowUpRight size={19}/></button><button className="overview-card sand" onClick={()=>setPage('calendar')}><span className="card-symbol"><CalendarDays size={21}/></span><div><span>Make room for learning</span><strong>{data.events.filter(e=>!e.done&&new Date(e.date)>new Date()).length}<small>upcoming sessions</small></strong></div><ArrowUpRight size={19}/></button><button className="overview-card rose" onClick={()=>setPage('study')}><span className="card-symbol"><GraduationCap size={21}/></span><div><span>Practice makes progress</span><strong>{accuracy===null?'—':accuracy+'%'}<small>practice accuracy</small></strong></div><ArrowUpRight size={19}/></button></div>
- <div className="lesson-layout"><section className="lesson-list"><div className="list-toolbar"><Tabs value={filter} onValueChange={setFilter}><TabsList><TabsTrigger value="all">All lessons <span className="count">{data.notes.length}</span></TabsTrigger><TabsTrigger value="pinned">Pinned</TabsTrigger></TabsList></Tabs><div className="search"><Search size={17}/><input id="search-lessons" placeholder="Find a lesson…" value={search} onChange={e=>setSearch(e.target.value)}/><kbd>⌘ K</kbd></div></div>
- {filtered.length?<div className="notes-grid">{filtered.map((n,i)=><button className={'note-card tone-'+i%4+(selected===n.id?' selected':'')} key={n.id} onClick={()=>setSelected(n.id)}><div className="note-meta"><span>{n.subject||'General'}</span>{n.pinned?<Pin size={14}/>:<FileText size={16}/>}</div><h3>{n.title}</h3><p>{(n.summary||n.text).replace(/[#*]/g,'').slice(0,150)}</p><div className="note-bottom"><span>{new Date(n.created).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span><span>{n.summary?<><Sparkles size={12}/>Organized</>:n.source.split(':')[0]}</span></div></button>)}</div>:<div className="empty glass"><BookOpen size={35}/><h2>{search?'No lessons found':'Start with a little curiosity.'}</h2><p>{search?'Try another word or subject.':'Record a lecture, bring a document, or put your thoughts into words. We’ll make space for them.'}</p><button className="primary" onClick={()=>setModal('lesson')}><Plus size={17}/>Add your first lesson</button></div>}</section>
- <aside className="note-reader glass">{note?<><div className="reader-actions"><span className="eyebrow">{note.subject||'YOUR LESSON'}</span><div className="inline"><button className="icon-button" aria-label="Pin lesson" onClick={()=>act('pin',async()=>{await api('notes/'+note.id,'PUT',{...note,pinned:!note.pinned});await refresh()})}><Pin size={16} fill={note.pinned?'currentColor':'none'}/></button><button className="icon-button" aria-label="Export lesson" onClick={()=>download(note.title+'.md',noteMarkdown(note))}><Download size={16}/></button><button className="icon-button" aria-label="Delete lesson" onClick={()=>setDeleteNote(note)}><Trash2 size={16}/></button></div></div><h2 className="reader-title">{note.title}</h2><div className="reader-meta">{new Date(note.created).toLocaleDateString()} · {Math.max(1,Math.ceil(note.text.split(/\s+/).length/200))} min read</div><Tabs defaultValue="notes" key={note.id}><TabsList><TabsTrigger value="notes">Study notes</TabsTrigger><TabsTrigger value="source">Original source</TabsTrigger></TabsList><TabsContent value="notes"><Mark text={note.summary||note.text}/></TabsContent><TabsContent value="source"><p className="source-label">{note.source}</p><textarea className="source-editor" defaultValue={note.text} onBlur={e=>{const value=e.currentTarget.value;if(value.trim()&&value!==note.text)act('save',async()=>{await api('notes/'+note.id,'PUT',{...note,text:value,summary:''});await refresh();toast.success('Source saved. Organize again to refresh the summary.')})}} aria-label="Edit source text"/>{Array.from(new Set([...(note.assets||[]),...(note.asset?[note.asset]:[])])).map((audioId,i)=><button key={audioId} className="secondary" onClick={()=>act('download',async()=>download('lecture-audio',await(await request('assets/'+audioId)).blob()))}><Download size={15}/>Download audio {i+1}</button>)}</TabsContent></Tabs><div className="reader-footer"><button className="primary" disabled={!!busy} onClick={()=>act('organize',async()=>{await api('organize','POST',{id:note.id});await refresh();toast.success('Your notes are organized.')})}>{busy==='organize'?<Busy>Organizing</Busy>:<><Sparkles size={16}/>Organize notes</>}</button><button className="icon-button" aria-label="Read aloud" onClick={()=>act('voice',async()=>{const r=await request('voice',{method:'POST',body:JSON.stringify({text:(note.summary||note.text).slice(0,3000)})});const url=URL.createObjectURL(await r.blob());const audio=new Audio(url);audio.onended=()=>URL.revokeObjectURL(url);await audio.play()})}><Volume2 size={19}/></button><button className="secondary" onClick={()=>{setPage('study');setModal('generate')}}><Layers size={16}/>Study</button></div></>:<div className="reader-empty"><span className="reader-decoration"><Sparkles size={34}/></span><h2>A little more<br/>understanding.</h2><p>Choose a lesson to read, organize,<br/>and turn into something you know.</p><div className="small-note"><Headphones size={16}/>Your lectures. Your pace.</div></div>}</aside></div></div>}
- {page==='study'&&<div className="workspace"><section className="workspace-heading"><div><span className="eyebrow">FROM READING TO REMEMBERING</span><h1>Study studio<span className="accent">.</span></h1><p>Recall it. Apply it. Make it yours.</p></div><button className="primary" onClick={()=>setModal('generate')}><Sparkles size={17}/>Create a study set</button></section>{player?<StudyPlayer key={player.deck.id+player.mode} {...player} onClose={()=>setPlayer(null)} onRefresh={refresh}/>:<><div className="study-decks">{data.decks.map(deck=><article className="glass deck-card" key={deck.id}><span className="eyebrow"><Layers size={16}/>{deck.cards.length} FLASHCARDS · {deck.questions.length} QUESTIONS</span><h2>{deck.title}</h2><p>{deck.cards.filter(c=>c.due<=Date.now()).length} cards ready for review</p><div className="study-buttons">{[['flashcards','Flashcards',Layers],['quiz','Quick quiz',Brain],['test','AP-style test',GraduationCap],['match','Match',Gamepad2],['crash','Crash',Timer]].map(([mode,label,Icon])=><button className="secondary" key={String(mode)} onClick={()=>setPlayer({deck,mode:String(mode)})}><Icon size={16}/>{String(label)}</button>)}</div></article>)}{!data.decks.length&&<div className="empty glass"><Layers size={34}/><h2>Build your next breakthrough.</h2><p>Choose lessons and create flashcards, AP-style questions, and study games from your own material.</p><button className="primary" onClick={()=>setModal('generate')}>Create a study set<ArrowRight size={16}/></button></div>}</div><section className="glass mistake-log"><h2>Mistake notebook</h2><p className="muted">A second look at the questions that need a little more practice.</p>{data.attempts.length===0?<p>Your completed quizzes and tests will appear here.</p>:data.attempts.slice(0,12).map(a=><details key={a.id}><summary>{a.title}<span>{a.score}/{a.total} · {new Date(a.created).toLocaleDateString()}</span></summary>{a.questions.map((q,i)=>a.answers[i]!==q.answer&&<div className="explanation" key={q.id}><strong>{q.prompt}</strong><p>Your answer: {q.options[a.answers[i]]||'Skipped'}</p><p className="correct">Correct: {q.options[q.answer]}</p><p>{q.explanations[q.answer]}</p>{a.answers[i]>=0&&<p>{q.explanations[a.answers[i]]}</p>}<blockquote>{q.quote}</blockquote></div>)}{a.score===a.total&&<p>Everything correct. Come back later for spaced practice.</p>}</details>)}</section></> }</div>}
- {page==='calendar'&&<CalendarView data={data} refresh={refresh}/>}
- {page==='chat'&&<Chat notes={data.notes}/>}
- {page==='settings'&&<SettingsView user={user} onSave={setUser} onLogout={()=>{setSession('');setUser(null);setData(initial)}}/>}
- </main>
- <Dialog open={modal==='lesson'||modal==='record'} onOpenChange={o=>{if(!o)setModal('')}}><DialogContent className="study-modal"><DialogHeader><DialogTitle>{modal==='record'?'A lecture worth keeping.':'Bring your learning here.'}</DialogTitle><DialogDescription>Add a lesson to your private cloud workspace.</DialogDescription></DialogHeader><ImportLesson startRecord={modal==='record'} onSave={async n=>{await refresh();setSelected(n.id);setPage('notes');setModal('')}}/></DialogContent></Dialog>
- <Dialog open={modal==='generate'} onOpenChange={o=>{if(!o)setModal('')}}><DialogContent className="study-modal"><DialogHeader><DialogTitle>Make it stick.</DialogTitle><DialogDescription>Select the lessons your flashcards and AP-style practice should use.</DialogDescription></DialogHeader><Generate notes={data.notes} selected={selected} onSave={async deck=>{await refresh();setModal('');setPlayer({deck,mode:'flashcards'});setPage('study')}} onImport={()=>setModal('lesson')}/></DialogContent></Dialog>
- <AlertDialog open={!!deleteNote} onOpenChange={o=>{if(!o)setDeleteNote(null)}}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this lesson?</AlertDialogTitle><AlertDialogDescription>This removes “{deleteNote?.title}” and its attached recording. Existing study sets remain.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Keep lesson</AlertDialogCancel><AlertDialogAction onClick={()=>act('delete',async()=>{await api('notes/'+deleteNote!.id,'DELETE');setDeleteNote(null);setSelected(null);await refresh()})}>Delete lesson</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
- {user.settings.brainrot&&<Brainrot/>}<Toaster position="bottom-right" richColors/>
- </SidebarProvider>;
+"use client";
+import Auth from "./auth";
+import Dashboard, { usePageMotion } from "./dashboard";
+import { providers } from "../lib/ai-providers";
+import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  BookOpen,
+  Layers,
+  CalendarDays,
+  MessageCircle,
+  Settings as SettingsIcon,
+  Plus,
+  Search,
+  Moon,
+  Sun,
+  Mic,
+  Upload,
+  Link as LinkIcon,
+  ArrowUpRight,
+  ArrowRight,
+  Play,
+  Pause,
+  Square,
+  Sparkles,
+  Pin,
+  Trash2,
+  Download,
+  Volume2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  Cloud,
+  Command,
+  FileText,
+  Timer,
+  Brain,
+  GraduationCap,
+  Gamepad2,
+  X,
+  Headphones,
+  LoaderCircle,
+  PanelLeft,
+} from "lucide-react";
+import {
+  Sidebar,
+  SidebarProvider,
+  SidebarHeader,
+  SidebarContent,
+  SidebarFooter,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Toaster, toast } from "sonner";
+import { Calendar } from "@/components/ui/calendar";
+import type {
+  Data,
+  Note,
+  Deck,
+  Attempt,
+  Settings,
+  User,
+  StudyEvent,
+} from "@/lib/types";
+import {
+  api,
+  request,
+  loadSession,
+  setSession,
+  extract,
+  download,
+  noteMarkdown,
+} from "@/lib/client";
+import { StudyPlayer, Brainrot } from "./study";
+const initial: Data = { notes: [], decks: [], attempts: [], events: [] };
+const defaultSettings: Settings = {
+  provider: "groq",
+  model: "openai/gpt-oss-120b",
+  voiceId: "",
+  slang: false,
+  brainrot: false,
+  theme: "system",
+};
+function SelectBox({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (s: string) => void;
+  options: [string, string][];
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="field">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(([v, t]) => (
+          <SelectItem value={v} key={v}>
+            {t}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
-function Auth({onLogin}:{onLogin:(u:User,t:string)=>Promise<void>}){
- const [signup,setSignup]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
- return <div className="auth-screen"><div className="auth-story"><a className="brand"><span className="brand-icon"><BookOpen/></span>still<span className="brand-soft">notes</span></a><span className="eyebrow">A QUIETER WAY TO LEARN</span><h1>Keep the lesson.<br/><span>Find the clarity.</span></h1><p>Your lectures, thoughts, and little breakthroughs.<br/>Together in one thoughtful space.</p><div className="auth-features"><span><Mic/>Capture a lecture</span><span><Layers/>Make it memorable</span><span><Cloud/>Pick up anywhere</span></div><span className="auth-foot">MADE FOR CURIOUS MINDS.</span></div><form className="auth-card glass" onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');const b=new FormData(e.currentTarget);try{const r=await api('auth/'+(signup?'signup':'login'),'POST',{email:b.get('email'),password:b.get('password'),name:b.get('name')||'Student'});await onLogin(r.user,r.token)}catch(err){setError((err as Error).message)}finally{setBusy(false)}}}><span className="eyebrow">YOUR PERSONAL WORKSPACE</span><h2>{signup?'Room to grow.':'Welcome back.'}</h2><p>{signup?'Create your account and make a little space for learning.':'A fresh page. A clearer mind. Let’s pick up where you left off.'}</p>{signup&&<label>Your name<input name="name" autoComplete="name" required maxLength={80} placeholder="What should we call you?"/></label>}<label>Email address<input name="email" type="email" autoComplete="email" required placeholder="you@example.com"/></label><label>Password<input name="password" type="password" autoComplete={signup?'new-password':'current-password'} required minLength={8} maxLength={128} placeholder="Your password"/></label>{error&&<p className="error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy?<Busy>Opening workspace</Busy>:<>{signup?'Create account':'Sign in'}<ArrowRight size={17}/></>}</button><p className="auth-switch">{signup?'Already have an account?':'New around here?'} <button type="button" onClick={()=>{setSignup(!signup);setError('')}}>{signup?'Sign in':'Create an account'}</button></p><small className="muted">Your notes stay private to your account. AI features use the keys you add in Settings.</small></form></div>
+export function Busy({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline">
+      <LoaderCircle className="spin" size={16} />
+      {children}
+    </span>
+  );
 }
-function ImportLesson({startRecord,onSave}:{startRecord:boolean;onSave:(n:Note)=>Promise<void>}){
- const [tab,setTab]=useState(startRecord?'record':'upload'),[title,setTitle]=useState(''),[subject,setSubject]=useState(''),[text,setText]=useState(''),[source,setSource]=useState('Written note'),[asset,setAsset]=useState<string>(),[assets,setAssets]=useState<string[]>([]),[url,setUrl]=useState(''),[busy,setBusy]=useState(''),[recording,setRecording]=useState(false),[seconds,setSeconds]=useState(0),[clips,setClips]=useState<Blob[]>([]);
- const recorder=useRef<MediaRecorder|null>(null),stream=useRef<MediaStream|null>(null),active=useRef(false),segmentTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
- useEffect(()=>{if(!recording)return;const t=setInterval(()=>setSeconds(s=>s+1),1000);return()=>clearInterval(t)},[recording]);
- useEffect(()=>{const warn=(e:BeforeUnloadEvent)=>{if(active.current){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>{active.current=false;if(segmentTimer.current)clearTimeout(segmentTimer.current);if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());window.removeEventListener('beforeunload',warn)}},[]);
- async function processAudio(blob:Blob){setBusy('transcribe');try{const form=new FormData();form.set('audio',blob,blob.type.includes('mp4')?'lecture.m4a':'lecture.webm');const r=await(await request('audio',{method:'POST',body:form})).json() as {text:string;asset:string;source:string};setText(old=>(old?old+'\n\n':'')+r.text);setAsset(r.asset);setAssets(old=>[...old,r.asset]);setSource(r.source);if(!title)setTitle('Lecture · '+new Date().toLocaleDateString());toast.success('Transcript added. Save your lesson when you’re ready.')}catch(e){toast.error((e as Error).message)}finally{setBusy('')}}
- function startSegment(){if(!stream.current||!active.current)return;const type=['audio/webm;codecs=opus','audio/mp4','audio/webm'].find(t=>MediaRecorder.isTypeSupported(t));const r=new MediaRecorder(stream.current,{...(type?{mimeType:type}:{}),audioBitsPerSecond:64000});recorder.current=r;const chunks:Blob[]=[];r.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};r.onstop=()=>{const blob=new Blob(chunks,{type:r.mimeType});setClips(c=>[...c,blob]);if(active.current)startSegment();else stream.current?.getTracks().forEach(t=>t.stop());};r.start();segmentTimer.current=setTimeout(()=>{if(r.state==='recording')r.stop()},10*60*1000)}
- async function record(){if(active.current){active.current=false;setRecording(false);if(segmentTimer.current)clearTimeout(segmentTimer.current);recorder.current?.stop();return;}try{stream.current=await navigator.mediaDevices.getUserMedia({audio:true});active.current=true;setRecording(true);startSegment()}catch{toast.error('Microphone access was denied or is unavailable. Allow it in your browser’s site settings.')}}
- return <div className="import-form"><Tabs value={tab} onValueChange={setTab}><TabsList className="wide-tabs"><TabsTrigger value="upload"><Upload size={15}/>Upload</TabsTrigger><TabsTrigger value="record"><Mic size={15}/>Record</TabsTrigger><TabsTrigger value="link"><LinkIcon size={15}/>Link</TabsTrigger><TabsTrigger value="write"><FileText size={15}/>Write</TabsTrigger></TabsList><TabsContent value="upload"><label className="upload-zone"><Upload size={26}/><strong>Bring a document or recording</strong><span>PDF, DOCX, CSV, TXT, subtitles, or audio · up to 20 MB</span><input type="file" accept=".pdf,.docx,.txt,.md,.csv,.srt,.vtt,audio/*" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;setBusy('import');try{if(f.type.startsWith('audio/')){setClips(c=>[...c,f]);await processAudio(f)}else{setText(await extract(f));setSource(f.name);if(!title)setTitle(f.name.replace(/\.[^.]+$/,''))}}catch(err){toast.error((err as Error).message)}finally{setBusy('')}}}/></label><p className="hint">For private Google files, download a Doc as DOCX or a Sheet as CSV, then upload it. Scanned PDFs need selectable text.</p></TabsContent><TabsContent value="record"><div className="record-panel"><span className={recording?'record-dot active':'record-dot'}/><strong>{Math.floor(seconds/60).toString().padStart(2,'0')}:{(seconds%60).toString().padStart(2,'0')}</strong><p>{recording?'Listening. Keep this tab open.':'Capture your teacher’s explanation.'}</p><button className={recording?'secondary':'primary'} onClick={record}>{recording?<Square size={16}/>:<Mic size={16}/>} {recording?'Stop recording':'Start recording'}</button><small>Check that your teacher permits recording. Audio is saved in separate 10-minute clips.</small></div></TabsContent><TabsContent value="link"><label>Google Doc, Google Sheet, or YouTube link<input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://…"/></label><button className="secondary" disabled={!!busy||!url} onClick={async()=>{setBusy('import');try{const r=await api('import','POST',{url});setText(r.text);setSource(r.source);toast.success('Source imported. Add a title and save.')}catch(e){toast.error((e as Error).message)}finally{setBusy('')}}}><LinkIcon size={16}/>Import text</button><p className="hint">Google links must be viewable without signing in. YouTube needs accessible captions; otherwise paste its transcript below.</p></TabsContent></Tabs>
- {clips.map((clip,i)=><div className="clip" key={i}><span>Audio clip {i+1} · {(clip.size/1000000).toFixed(1)} MB</span><button className="secondary" disabled={!!busy} onClick={()=>processAudio(clip)}>Transcribe</button><button className="icon-button" aria-label="Download recording" onClick={()=>download('lecture-'+(i+1)+(clip.type.includes('mp4')?'.m4a':'.webm'),clip)}><Download size={16}/></button></div>)}
- <div className="form-row"><label>Lesson title<input value={title} onChange={e=>setTitle(e.target.value)} maxLength={160} placeholder="The idea worth remembering"/></label><label>Subject<input value={subject} onChange={e=>setSubject(e.target.value)} maxLength={80} placeholder="e.g. AP Biology"/></label></div><label>Source text<textarea value={text} onChange={e=>setText(e.target.value)} maxLength={90000} placeholder="Your transcript, document text, or notes will appear here…" rows={6}/></label><div className="form-footer"><span className="hint">{text.length.toLocaleString()} / 90,000 characters</span><button className="primary" disabled={!!busy||recording||!title.trim()||!text.trim()} onClick={async()=>{setBusy('save');try{await onSave(await api<Note>('notes','POST',{title,subject,text,source,asset,assets}))}catch(e){toast.error((e as Error).message)}finally{setBusy('')}}}>{busy?<Busy>{busy==='transcribe'?'Transcribing…':busy==='import'?'Importing…':'Saving…'}</Busy>:<>Save lesson<ArrowRight size={16}/></>}</button></div></div>
+function Mark({ text }: { text: string }) {
+  return (
+    <div className="prose-note">
+      {text.split("\n").map((line, i) =>
+        line.startsWith("### ") ? (
+          <h3 key={i}>{line.slice(4)}</h3>
+        ) : line.startsWith("## ") ? (
+          <h2 key={i}>{line.slice(3)}</h2>
+        ) : line.startsWith("# ") ? (
+          <h2 key={i}>{line.slice(2)}</h2>
+        ) : (
+          <p key={i}>
+            {line
+              .split(/(\*\*.*?\*\*)/g)
+              .map((part, j) =>
+                part.startsWith("**") ? (
+                  <strong key={j}>{part.slice(2, -2)}</strong>
+                ) : (
+                  part
+                ),
+              )}
+            {!line && <br />}
+          </p>
+        ),
+      )}
+    </div>
+  );
 }
-function Generate({notes,selected,onSave,onImport}:{notes:Note[];selected:string|null;onSave:(d:Deck)=>Promise<void>;onImport:()=>void}){
- const [ids,setIds]=useState<string[]>(selected?[selected]:[]),[title,setTitle]=useState(''),[count,setCount]=useState('8'),[busy,setBusy]=useState(false);
- return <div className="generate-form"><label>Study set title<input value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Cells & energy — Unit 3" maxLength={160}/></label><div className="lesson-checklist">{notes.map(n=><label key={n.id} className="check-row"><Checkbox checked={ids.includes(n.id)} onCheckedChange={v=>setIds(x=>v?[...x,n.id]:x.filter(id=>id!==n.id))}/><span><strong>{n.title}</strong><small>{n.subject||'General'}</small></span></label>)}{!notes.length&&<p>Add a lesson before generating a study set.</p>}</div><button className="text-button" onClick={onImport}><Upload size={15}/>Import a PDF, Google Doc or Sheet CSV</button><label>Questions and flashcards<SelectBox value={count} onChange={setCount} options={['4','8','12','20'].map(x=>[x,x+' of each'])}/></label><p className="hint">AP-style practice with a rationale for every answer option. Generated from your selected lessons; independent of College Board.</p><button className="primary" disabled={busy||!ids.length||!title.trim()} onClick={async()=>{setBusy(true);try{await onSave(await api<Deck>('generate','POST',{noteIds:ids,title,count:Number(count)}))}catch(e){toast.error((e as Error).message)}finally{setBusy(false)}}}>{busy?<Busy>Building your study set…</Busy>:<><Sparkles size={16}/>Generate study set</>}</button></div>
+export default function StillNotes() {
+  const [user, setUser] = useState<User | null>(null),
+    [data, setData] = useState<Data>(initial),
+    [loading, setLoading] = useState(true),
+    [page, setPage] = useState("home"),
+    [search, setSearch] = useState(""),
+    [filter, setFilter] = useState("all"),
+    [selected, setSelected] = useState<string | null>(null),
+    [modal, setModal] = useState(""),
+    [busy, setBusy] = useState(""),
+    [deleteNote, setDeleteNote] = useState<Note | null>(null),
+    [player, setPlayer] = useState<{ deck: Deck; mode: string } | null>(null),
+    [focus, setFocus] = useState(false),
+    [focusSeconds, setFocusSeconds] = useState(25 * 60);
+  const theme = user?.settings.theme || "system";
+  const [resetToken, setResetToken] = useState(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.hash.slice(1)).get("reset") || ""
+      : "",
+  );
+  useEffect(() => {
+    if (resetToken)
+      history.replaceState(null, "", location.pathname + location.search);
+  }, [resetToken]);
+  usePageMotion(
+    page + (loading ? "loading" : "ready") + (user ? "signed" : "guest"),
+    data.notes.length + data.decks.length,
+  );
+
+  useEffect(() => {
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const update = () =>
+      document.documentElement.classList.toggle(
+        "dark",
+        theme === "dark" || (theme === "system" && media.matches),
+      );
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [theme]);
+  const refresh = useCallback(
+    async () => setData(await api<Data>("state")),
+    [],
+  );
+  useEffect(() => {
+    loadSession();
+    api<{ user: User }>("auth/me")
+      .then(async (r) => {
+        setUser(r.user);
+        await refresh();
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [refresh]);
+  useEffect(() => {
+    if (!user) return;
+    const fn = () => {
+      if (document.visibilityState === "visible") refresh().catch(() => {});
+    };
+    const t = setInterval(fn, 30000);
+    document.addEventListener("visibilitychange", fn);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", fn);
+    };
+  }, [user, refresh]);
+  useEffect(() => {
+    if (!focus) return;
+    const t = setInterval(
+      () =>
+        setFocusSeconds((s) => {
+          if (s <= 1) {
+            setFocus(false);
+            toast.success("Focus session finished. Take a five-minute break.");
+            return 25 * 60;
+          }
+          return s - 1;
+        }),
+      1000,
+    );
+    return () => clearInterval(t);
+  }, [focus]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        document.getElementById("search-lessons")?.focus();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+        e.preventDefault();
+        setModal("lesson");
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
+  async function act(name: string, fn: () => Promise<void>) {
+    setBusy(name);
+    try {
+      await fn();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  const note = data.notes.find((n) => n.id === selected);
+  const due = data.decks.reduce(
+    (n, d) => n + d.cards.filter((c) => c.due <= Date.now()).length,
+    0,
+  );
+  const accuracy = data.attempts.length
+    ? Math.round(
+        (data.attempts.reduce((n, a) => n + a.score, 0) /
+          data.attempts.reduce((n, a) => n + a.total, 0)) *
+          100,
+      )
+    : null;
+  const filtered = data.notes.filter(
+    (n) =>
+      (filter !== "pinned" || n.pinned) &&
+      (!search ||
+        [n.title, n.subject, n.text]
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase())),
+  );
+  async function logout() {
+    await api("auth/logout", "POST");
+    setSession("");
+    setUser(null);
+    setData(initial);
+    setSelected(null);
+    setPlayer(null);
+  }
+  if (loading)
+    return (
+      <div className="loading-screen">
+        <div className="brand-icon">
+          <BookOpen />
+        </div>
+        <Busy>Opening your workspace</Busy>
+      </div>
+    );
+  if (!user || resetToken)
+    return (
+      <>
+        <Auth
+          resetToken={resetToken}
+          onLogin={async (u, t) => {
+            setSession(t);
+            setResetToken("");
+            setUser(u);
+            await refresh();
+          }}
+        />
+        <Toaster position="bottom-right" richColors />
+      </>
+    );
+  return (
+    <SidebarProvider>
+      <Sidebar className="app-sidebar">
+        <SidebarHeader>
+          <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
+            <span className="brand-icon">
+              <BookOpen size={23} />
+            </span>
+            <span>
+              still<span className="brand-soft">notes</span>
+              <small>YOUR SPACE TO UNDERSTAND</small>
+            </span>
+          </a>
+          <button
+            className="primary new-note"
+            onClick={() => setModal("lesson")}
+          >
+            <Plus size={18} />
+            New lesson<span className="shortcut">⌘ N</span>
+          </button>
+        </SidebarHeader>
+        <SidebarContent>
+          <p className="nav-label">WORKSPACE</p>
+          <SidebarMenu>
+            {[
+              ["home", "Overview", Sparkles],
+              ["notes", "Your lessons", BookOpen],
+              ["study", "Study studio", Layers],
+              ["calendar", "Calendar", CalendarDays],
+              ["chat", "Ask your notes", MessageCircle],
+            ].map(([id, title, Icon]) => (
+              <SidebarMenuItem key={String(id)}>
+                <SidebarMenuButton
+                  className="nav-button"
+                  isActive={page === id}
+                  onClick={() => {
+                    setPage(String(id));
+                    setPlayer(null);
+                  }}
+                >
+                  <Icon size={19} />
+                  <span>{String(title)}</span>
+                  {id === "study" && due > 0 && (
+                    <b className="nav-badge">{due}</b>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+          <div className="sidebar-focus">
+            <span className="eyebrow">
+              <Timer size={15} />A LITTLE FOCUS
+            </span>
+            <strong>
+              {Math.floor(focusSeconds / 60)
+                .toString()
+                .padStart(2, "0")}
+              :{(focusSeconds % 60).toString().padStart(2, "0")}
+            </strong>
+            <span>One thing at a time.</span>
+            <button className="secondary" onClick={() => setFocus(!focus)}>
+              {focus ? <Pause size={15} /> : <Play size={15} />}{" "}
+              {focus ? "Pause session" : "Start focusing"}
+            </button>
+          </div>
+        </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="nav-button"
+                isActive={page === "settings"}
+                onClick={() => setPage("settings")}
+              >
+                <SettingsIcon size={19} />
+                Settings
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <div className="profile">
+            <span className="avatar">
+              {user.name.slice(0, 1).toUpperCase()}
+            </span>
+            <div>
+              <strong>{user.name}</strong>
+              <small>
+                <Cloud size={12} />
+                Private cloud workspace
+              </small>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="Sign out"
+              onClick={() => act("logout", logout)}
+            >
+              <LogOut size={17} />
+            </button>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+      <main className="app-main">
+        <header className="topbar">
+          <div className="inline">
+            <SidebarTrigger />
+            <span className="muted">Workspace</span>
+            <span className="muted">/</span>
+            <strong>
+              {page === "notes"
+                ? "Your lessons"
+                : page === "study"
+                  ? "Study studio"
+                  : page === "chat"
+                    ? "Ask your notes"
+                    : page === "calendar"
+                      ? "Calendar"
+                      : "Settings"}
+            </strong>
+          </div>
+          <div className="inline">
+            <span className="sync">
+              <span />
+              Cloud connected
+            </span>
+            <button
+              className="icon-button"
+              aria-label="Toggle dark mode"
+              onClick={() =>
+                act("theme", async () => {
+                  const next = {
+                    ...user.settings,
+                    theme: document.documentElement.classList.contains("dark")
+                      ? "light"
+                      : "dark",
+                  };
+                  setUser((await api("settings", "PUT", next)).user);
+                })
+              }
+            >
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
+        </header>
+        {page === "home" && (
+          <Dashboard
+            user={user}
+            data={data}
+            onNavigate={setPage}
+            onNew={setModal}
+          />
+        )}
+        {page === "notes" && (
+          <div className="workspace">
+            <section className="workspace-heading">
+              <div>
+                <span className="eyebrow">LESS CLUTTER. MORE CLARITY.</span>
+                <h1>
+                  Your lessons<span className="accent">.</span>
+                </h1>
+                <p>A quiet home for everything you’re learning.</p>
+              </div>
+              <div className="actions">
+                <button
+                  className="secondary"
+                  onClick={() => setModal("record")}
+                >
+                  <Mic size={17} />
+                  Record lecture
+                </button>
+                <button className="primary" onClick={() => setModal("lesson")}>
+                  <Plus size={17} />
+                  Add material
+                </button>
+              </div>
+            </section>
+            <div className="overview-grid">
+              <button
+                className="overview-card sage"
+                onClick={() => {
+                  setPage("study");
+                  setPlayer(null);
+                }}
+              >
+                <span className="card-symbol">
+                  <Layers size={21} />
+                </span>
+                <div>
+                  <span>Ready to revisit</span>
+                  <strong>
+                    {due}
+                    <small>flashcards due</small>
+                  </strong>
+                </div>
+                <ArrowUpRight size={19} />
+              </button>
+              <button
+                className="overview-card sand"
+                onClick={() => setPage("calendar")}
+              >
+                <span className="card-symbol">
+                  <CalendarDays size={21} />
+                </span>
+                <div>
+                  <span>Make room for learning</span>
+                  <strong>
+                    {
+                      data.events.filter(
+                        (e) => !e.done && new Date(e.date) > new Date(),
+                      ).length
+                    }
+                    <small>upcoming sessions</small>
+                  </strong>
+                </div>
+                <ArrowUpRight size={19} />
+              </button>
+              <button
+                className="overview-card rose"
+                onClick={() => setPage("study")}
+              >
+                <span className="card-symbol">
+                  <GraduationCap size={21} />
+                </span>
+                <div>
+                  <span>Practice makes progress</span>
+                  <strong>
+                    {accuracy === null ? "—" : accuracy + "%"}
+                    <small>practice accuracy</small>
+                  </strong>
+                </div>
+                <ArrowUpRight size={19} />
+              </button>
+            </div>
+            <div className="lesson-layout">
+              <section className="lesson-list">
+                <div className="list-toolbar">
+                  <Tabs value={filter} onValueChange={setFilter}>
+                    <TabsList>
+                      <TabsTrigger value="all">
+                        All lessons{" "}
+                        <span className="count">{data.notes.length}</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="pinned">Pinned</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <div className="search">
+                    <Search size={17} />
+                    <input
+                      id="search-lessons"
+                      placeholder="Find a lesson…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    <kbd>⌘ K</kbd>
+                  </div>
+                </div>
+                {filtered.length ? (
+                  <div className="notes-grid">
+                    {filtered.map((n, i) => (
+                      <button
+                        className={
+                          "note-card tone-" +
+                          (i % 4) +
+                          (selected === n.id ? " selected" : "")
+                        }
+                        key={n.id}
+                        onClick={() => setSelected(n.id)}
+                      >
+                        <div className="note-meta">
+                          <span>{n.subject || "General"}</span>
+                          {n.pinned ? (
+                            <Pin size={14} />
+                          ) : (
+                            <FileText size={16} />
+                          )}
+                        </div>
+                        <h3>{n.title}</h3>
+                        <p>
+                          {(n.summary || n.text)
+                            .replace(/[#*]/g, "")
+                            .slice(0, 150)}
+                        </p>
+                        <div className="note-bottom">
+                          <span>
+                            {new Date(n.created).toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </span>
+                          <span>
+                            {n.summary ? (
+                              <>
+                                <Sparkles size={12} />
+                                Organized
+                              </>
+                            ) : (
+                              n.source.split(":")[0]
+                            )}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty glass">
+                    <BookOpen size={35} />
+                    <h2>
+                      {search
+                        ? "No lessons found"
+                        : "Start with a little curiosity."}
+                    </h2>
+                    <p>
+                      {search
+                        ? "Try another word or subject."
+                        : "Record a lecture, bring a document, or put your thoughts into words. We’ll make space for them."}
+                    </p>
+                    <button
+                      className="primary"
+                      onClick={() => setModal("lesson")}
+                    >
+                      <Plus size={17} />
+                      Add your first lesson
+                    </button>
+                  </div>
+                )}
+              </section>
+              <aside className="note-reader glass">
+                {note ? (
+                  <>
+                    <div className="reader-actions">
+                      <span className="eyebrow">
+                        {note.subject || "YOUR LESSON"}
+                      </span>
+                      <div className="inline">
+                        <button
+                          className="icon-button"
+                          aria-label="Pin lesson"
+                          onClick={() =>
+                            act("pin", async () => {
+                              await api("notes/" + note.id, "PUT", {
+                                ...note,
+                                pinned: !note.pinned,
+                              });
+                              await refresh();
+                            })
+                          }
+                        >
+                          <Pin
+                            size={16}
+                            fill={note.pinned ? "currentColor" : "none"}
+                          />
+                        </button>
+                        <button
+                          className="icon-button"
+                          aria-label="Export lesson"
+                          onClick={() =>
+                            download(note.title + ".md", noteMarkdown(note))
+                          }
+                        >
+                          <Download size={16} />
+                        </button>
+                        <button
+                          className="icon-button"
+                          aria-label="Delete lesson"
+                          onClick={() => setDeleteNote(note)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <h2 className="reader-title">{note.title}</h2>
+                    <div className="reader-meta">
+                      {new Date(note.created).toLocaleDateString()} ·{" "}
+                      {Math.max(
+                        1,
+                        Math.ceil(note.text.split(/\s+/).length / 200),
+                      )}{" "}
+                      min read
+                    </div>
+                    <Tabs defaultValue="notes" key={note.id}>
+                      <TabsList>
+                        <TabsTrigger value="notes">Study notes</TabsTrigger>
+                        <TabsTrigger value="source">
+                          Original source
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="notes">
+                        <Mark text={note.summary || note.text} />
+                      </TabsContent>
+                      <TabsContent value="source">
+                        <p className="source-label">{note.source}</p>
+                        <textarea
+                          className="source-editor"
+                          defaultValue={note.text}
+                          onBlur={(e) => {
+                            const value = e.currentTarget.value;
+                            if (value.trim() && value !== note.text)
+                              act("save", async () => {
+                                await api("notes/" + note.id, "PUT", {
+                                  ...note,
+                                  text: value,
+                                  summary: "",
+                                });
+                                await refresh();
+                                toast.success(
+                                  "Source saved. Organize again to refresh the summary.",
+                                );
+                              });
+                          }}
+                          aria-label="Edit source text"
+                        />
+                        {Array.from(
+                          new Set([
+                            ...(note.assets || []),
+                            ...(note.asset ? [note.asset] : []),
+                          ]),
+                        ).map((audioId, i) => (
+                          <button
+                            key={audioId}
+                            className="secondary"
+                            onClick={() =>
+                              act("download", async () =>
+                                download(
+                                  "lecture-audio",
+                                  await (
+                                    await request("assets/" + audioId)
+                                  ).blob(),
+                                ),
+                              )
+                            }
+                          >
+                            <Download size={15} />
+                            Download audio {i + 1}
+                          </button>
+                        ))}
+                      </TabsContent>
+                    </Tabs>
+                    <div className="reader-footer">
+                      <button
+                        className="primary"
+                        disabled={!!busy}
+                        onClick={() =>
+                          act("organize", async () => {
+                            await api("organize", "POST", { id: note.id });
+                            await refresh();
+                            toast.success("Your notes are organized.");
+                          })
+                        }
+                      >
+                        {busy === "organize" ? (
+                          <Busy>Organizing</Busy>
+                        ) : (
+                          <>
+                            <Sparkles size={16} />
+                            Organize notes
+                          </>
+                        )}
+                      </button>
+                      <button
+                        className="icon-button"
+                        aria-label="Read aloud"
+                        onClick={() =>
+                          act("voice", async () => {
+                            const r = await request("voice", {
+                              method: "POST",
+                              body: JSON.stringify({
+                                text: (note.summary || note.text).slice(
+                                  0,
+                                  3000,
+                                ),
+                              }),
+                            });
+                            const url = URL.createObjectURL(await r.blob());
+                            const audio = new Audio(url);
+                            audio.onended = () => URL.revokeObjectURL(url);
+                            await audio.play();
+                          })
+                        }
+                      >
+                        <Volume2 size={19} />
+                      </button>
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          setPage("study");
+                          setModal("generate");
+                        }}
+                      >
+                        <Layers size={16} />
+                        Study
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="reader-empty">
+                    <span className="reader-decoration">
+                      <Sparkles size={34} />
+                    </span>
+                    <h2>
+                      A little more
+                      <br />
+                      understanding.
+                    </h2>
+                    <p>
+                      Choose a lesson to read, organize,
+                      <br />
+                      and turn into something you know.
+                    </p>
+                    <div className="small-note">
+                      <Headphones size={16} />
+                      Your lectures. Your pace.
+                    </div>
+                  </div>
+                )}
+              </aside>
+            </div>
+          </div>
+        )}
+        {page === "study" && (
+          <div className="workspace">
+            <section className="workspace-heading">
+              <div>
+                <span className="eyebrow">FROM READING TO REMEMBERING</span>
+                <h1>
+                  Study studio<span className="accent">.</span>
+                </h1>
+                <p>Recall it. Apply it. Make it yours.</p>
+              </div>
+              <button className="primary" onClick={() => setModal("generate")}>
+                <Sparkles size={17} />
+                Create a study set
+              </button>
+            </section>
+            {player ? (
+              <StudyPlayer
+                key={player.deck.id + player.mode}
+                {...player}
+                onClose={() => setPlayer(null)}
+                onRefresh={refresh}
+              />
+            ) : (
+              <>
+                <div className="study-decks">
+                  {data.decks.map((deck) => (
+                    <article className="glass deck-card" key={deck.id}>
+                      <span className="eyebrow">
+                        <Layers size={16} />
+                        {deck.cards.length} FLASHCARDS · {deck.questions.length}{" "}
+                        QUESTIONS
+                      </span>
+                      <h2>{deck.title}</h2>
+                      <p>
+                        {deck.cards.filter((c) => c.due <= Date.now()).length}{" "}
+                        cards ready for review
+                      </p>
+                      <div className="study-buttons">
+                        {[
+                          ["flashcards", "Flashcards", Layers],
+                          ["quiz", "Quick quiz", Brain],
+                          ["test", "AP-style test", GraduationCap],
+                          ["match", "Match", Gamepad2],
+                          ["crash", "Crash", Timer],
+                        ].map(([mode, label, Icon]) => (
+                          <button
+                            className="secondary"
+                            key={String(mode)}
+                            onClick={() =>
+                              setPlayer({ deck, mode: String(mode) })
+                            }
+                          >
+                            <Icon size={16} />
+                            {String(label)}
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                  {!data.decks.length && (
+                    <div className="empty glass">
+                      <Layers size={34} />
+                      <h2>Build your next breakthrough.</h2>
+                      <p>
+                        Choose lessons and create flashcards, AP-style
+                        questions, and study games from your own material.
+                      </p>
+                      <button
+                        className="primary"
+                        onClick={() => setModal("generate")}
+                      >
+                        Create a study set
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <section className="glass mistake-log">
+                  <h2>Mistake notebook</h2>
+                  <p className="muted">
+                    A second look at the questions that need a little more
+                    practice.
+                  </p>
+                  {data.attempts.length === 0 ? (
+                    <p>Your completed quizzes and tests will appear here.</p>
+                  ) : (
+                    data.attempts.slice(0, 12).map((a) => (
+                      <details key={a.id}>
+                        <summary>
+                          {a.title}
+                          <span>
+                            {a.score}/{a.total} ·{" "}
+                            {new Date(a.created).toLocaleDateString()}
+                          </span>
+                        </summary>
+                        {a.questions.map(
+                          (q, i) =>
+                            a.answers[i] !== q.answer && (
+                              <div className="explanation" key={q.id}>
+                                <strong>{q.prompt}</strong>
+                                <p>
+                                  Your answer:{" "}
+                                  {q.options[a.answers[i]] || "Skipped"}
+                                </p>
+                                <p className="correct">
+                                  Correct: {q.options[q.answer]}
+                                </p>
+                                <p>{q.explanations[q.answer]}</p>
+                                {a.answers[i] >= 0 && (
+                                  <p>{q.explanations[a.answers[i]]}</p>
+                                )}
+                                <blockquote>{q.quote}</blockquote>
+                              </div>
+                            ),
+                        )}
+                        {a.score === a.total && (
+                          <p>
+                            Everything correct. Come back later for spaced
+                            practice.
+                          </p>
+                        )}
+                      </details>
+                    ))
+                  )}
+                </section>
+              </>
+            )}
+          </div>
+        )}
+        {page === "calendar" && <CalendarView data={data} refresh={refresh} />}
+        {page === "chat" && <Chat notes={data.notes} />}
+        {page === "settings" && (
+          <SettingsView
+            user={user}
+            onSave={setUser}
+            onLogout={() => {
+              setSession("");
+              setUser(null);
+              setData(initial);
+            }}
+          />
+        )}
+      </main>
+      <Dialog
+        open={modal === "lesson" || modal === "record"}
+        onOpenChange={(o) => {
+          if (!o) setModal("");
+        }}
+      >
+        <DialogContent className="study-modal">
+          <DialogHeader>
+            <DialogTitle>
+              {modal === "record"
+                ? "A lecture worth keeping."
+                : "Bring your learning here."}
+            </DialogTitle>
+            <DialogDescription>
+              Add a lesson to your private cloud workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <ImportLesson
+            startRecord={modal === "record"}
+            onSave={async (n) => {
+              await refresh();
+              setSelected(n.id);
+              setPage("notes");
+              setModal("");
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={modal === "generate"}
+        onOpenChange={(o) => {
+          if (!o) setModal("");
+        }}
+      >
+        <DialogContent className="study-modal">
+          <DialogHeader>
+            <DialogTitle>Make it stick.</DialogTitle>
+            <DialogDescription>
+              Select the lessons your flashcards and AP-style practice should
+              use.
+            </DialogDescription>
+          </DialogHeader>
+          <Generate
+            notes={data.notes}
+            selected={selected}
+            onSave={async (deck) => {
+              await refresh();
+              setModal("");
+              setPlayer({ deck, mode: "flashcards" });
+              setPage("study");
+            }}
+            onImport={() => setModal("lesson")}
+          />
+        </DialogContent>
+      </Dialog>
+      <AlertDialog
+        open={!!deleteNote}
+        onOpenChange={(o) => {
+          if (!o) setDeleteNote(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this lesson?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes “{deleteNote?.title}” and its attached recording.
+              Existing study sets remain.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep lesson</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                act("delete", async () => {
+                  await api("notes/" + deleteNote!.id, "DELETE");
+                  setDeleteNote(null);
+                  setSelected(null);
+                  await refresh();
+                })
+              }
+            >
+              Delete lesson
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {user.settings.brainrot && <Brainrot />}
+      <Toaster position="bottom-right" richColors />
+    </SidebarProvider>
+  );
 }
-function SettingsView({user,onSave,onLogout}:{user:User;onSave:(u:User)=>void;onLogout:()=>void}){
- const [s,setS]=useState({...defaultSettings,...user.settings}),[aiKey,setAiKey]=useState(''),[fishKey,setFishKey]=useState(''),[clearAi,setClearAi]=useState(false),[clearFish,setClearFish]=useState(false),[busy,setBusy]=useState(false);
- return <div className="workspace narrow"><section className="workspace-heading"><div><span className="eyebrow">MAKE YOURSELF AT HOME</span><h1>Your preferences<span className="accent">.</span></h1><p>A workspace that feels like you.</p></div></section><form className="glass settings-panel" onSubmit={async e=>{e.preventDefault();setBusy(true);try{const r=await api('settings','PUT',{...s,aiKey,fishKey,clearAi,clearFish});onSave(r.user);setS(r.user.settings);setAiKey('');setFishKey('');setClearAi(false);setClearFish(false);toast.success('Settings saved across your devices.')}catch(e){toast.error((e as Error).message)}finally{setBusy(false)}}}><h2><Sparkles size={20}/>Your AI connection</h2><p>Keys are encrypted in your account and used only by the backend. Leave a key blank to keep the saved value.</p><div className="form-row"><label>Text AI provider<SelectBox value={s.provider} onChange={v=>setS({...s,provider:v as 'groq'|'grok',model:v==='groq'?'openai/gpt-oss-120b':'grok-4-1-fast-reasoning'})} options={[["groq","Groq (gsk_ keys)"],["grok","xAI Grok"]]}/></label><label>Model<input value={s.model} onChange={e=>setS({...s,model:e.target.value})}/></label></div><label>AI API key <span className="status-label">{s.hasAiKey?'Key saved':'Not connected'}</span><input type="password" autoComplete="off" value={aiKey} onChange={e=>setAiKey(e.target.value)} placeholder="Paste a new key to replace the saved one"/></label>{s.hasAiKey&&<label className="check-row compact"><Checkbox checked={clearAi} onCheckedChange={v=>setClearAi(!!v)}/>Remove saved AI key</label>}<h2><Headphones size={20}/>Lecture audio & voice</h2><label>Fish Audio API key <span className="status-label">{s.hasFishKey?'Key saved':'Not connected'}</span><input type="password" autoComplete="off" value={fishKey} onChange={e=>setFishKey(e.target.value)} placeholder="Paste a new Fish Audio key"/></label>{s.hasFishKey&&<label className="check-row compact"><Checkbox checked={clearFish} onCheckedChange={v=>setClearFish(!!v)}/>Remove saved Fish Audio key</label>}<label>Fish Audio voice ID<input value={s.voiceId} onChange={e=>setS({...s,voiceId:e.target.value})} placeholder="Needed for read-aloud; transcription works without it"/></label><h2><Sun size={20}/>Your environment</h2><label>Appearance<SelectBox value={s.theme} onChange={v=>setS({...s,theme:v as Settings['theme']})} options={[["system","Follow device"],["light","Light — morning mist"],["dark","Dark — after hours"]]}/></label><label className="switch-row"><div><strong>Gen Z mode</strong><p>A little slang in AI explanations. Same concepts, lighter delivery.</p></div><Switch checked={s.slang} onCheckedChange={v=>setS({...s,slang:v})}/></label><label className="switch-row"><div><strong>Brainrot corner</strong><p>An optional original runner, parkour or driving animation beside your study space.</p></div><Switch checked={s.brainrot} onCheckedChange={v=>setS({...s,brainrot:v})}/></label><button className="primary" disabled={busy}>{busy?<Busy>Saving</Busy>:<><Check size={16}/>Save preferences</>}</button></form><section className="glass settings-panel"><h2><Cloud size={20}/>Account & your data</h2><p>{user.email}</p><button className="secondary" onClick={async()=>{try{download('still-notes-backup.json',JSON.stringify(await api('export'),null,2))}catch(e){toast.error((e as Error).message)}}}><Download size={16}/>Export all study data</button><form onSubmit={async e=>{e.preventDefault();const b=new FormData(e.currentTarget);try{await api('auth/password','POST',{current:b.get('current'),password:b.get('password')});toast.success('Password changed. Sign in again on each device.');onLogout()}catch(e){toast.error((e as Error).message)}}}><h3>Change password</h3><div className="form-row"><label>Current password<input name="current" type="password" required autoComplete="current-password"/></label><label>New password<input name="password" type="password" minLength={10} maxLength={128} required autoComplete="new-password"/></label></div><button className="secondary">Update password</button></form></section></div>
+function ImportLesson({
+  startRecord,
+  onSave,
+}: {
+  startRecord: boolean;
+  onSave: (n: Note) => Promise<void>;
+}) {
+  const [tab, setTab] = useState(startRecord ? "record" : "upload"),
+    [title, setTitle] = useState(""),
+    [subject, setSubject] = useState(""),
+    [text, setText] = useState(""),
+    [source, setSource] = useState("Written note"),
+    [asset, setAsset] = useState<string>(),
+    [assets, setAssets] = useState<string[]>([]),
+    [url, setUrl] = useState(""),
+    [busy, setBusy] = useState(""),
+    [recording, setRecording] = useState(false),
+    [seconds, setSeconds] = useState(0),
+    [clips, setClips] = useState<Blob[]>([]);
+  const recorder = useRef<MediaRecorder | null>(null),
+    stream = useRef<MediaStream | null>(null),
+    active = useRef(false),
+    segmentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [recording]);
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (active.current) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => {
+      active.current = false;
+      if (segmentTimer.current) clearTimeout(segmentTimer.current);
+      if (recorder.current?.state === "recording") recorder.current.stop();
+      stream.current?.getTracks().forEach((t) => t.stop());
+      window.removeEventListener("beforeunload", warn);
+    };
+  }, []);
+  async function processAudio(blob: Blob) {
+    setBusy("transcribe");
+    try {
+      const form = new FormData();
+      form.set(
+        "audio",
+        blob,
+        blob.type.includes("mp4") ? "lecture.m4a" : "lecture.webm",
+      );
+      const r = (await (
+        await request("audio", { method: "POST", body: form })
+      ).json()) as { text: string; asset: string; source: string };
+      setText((old) => (old ? old + "\n\n" : "") + r.text);
+      setAsset(r.asset);
+      setAssets((old) => [...old, r.asset]);
+      setSource(r.source);
+      if (!title) setTitle("Lecture · " + new Date().toLocaleDateString());
+      toast.success("Transcript added. Save your lesson when you’re ready.");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  function startSegment() {
+    if (!stream.current || !active.current) return;
+    const type = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(
+      (t) => MediaRecorder.isTypeSupported(t),
+    );
+    const r = new MediaRecorder(stream.current, {
+      ...(type ? { mimeType: type } : {}),
+      audioBitsPerSecond: 64000,
+    });
+    recorder.current = r;
+    const chunks: Blob[] = [];
+    r.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    r.onstop = () => {
+      const blob = new Blob(chunks, { type: r.mimeType });
+      setClips((c) => [...c, blob]);
+      if (active.current) startSegment();
+      else stream.current?.getTracks().forEach((t) => t.stop());
+    };
+    r.start();
+    segmentTimer.current = setTimeout(
+      () => {
+        if (r.state === "recording") r.stop();
+      },
+      10 * 60 * 1000,
+    );
+  }
+  async function record() {
+    if (active.current) {
+      active.current = false;
+      setRecording(false);
+      if (segmentTimer.current) clearTimeout(segmentTimer.current);
+      recorder.current?.stop();
+      return;
+    }
+    try {
+      stream.current = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      active.current = true;
+      setRecording(true);
+      startSegment();
+    } catch {
+      toast.error(
+        "Microphone access was denied or is unavailable. Allow it in your browser’s site settings.",
+      );
+    }
+  }
+  return (
+    <div className="import-form">
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="wide-tabs">
+          <TabsTrigger value="upload">
+            <Upload size={15} />
+            Upload
+          </TabsTrigger>
+          <TabsTrigger value="record">
+            <Mic size={15} />
+            Record
+          </TabsTrigger>
+          <TabsTrigger value="link">
+            <LinkIcon size={15} />
+            Link
+          </TabsTrigger>
+          <TabsTrigger value="write">
+            <FileText size={15} />
+            Write
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="upload">
+          <label className="upload-zone">
+            <Upload size={26} />
+            <strong>Bring a document or recording</strong>
+            <span>PDF, DOCX, CSV, TXT, subtitles, or audio · up to 20 MB</span>
+            <input
+              type="file"
+              accept=".pdf,.docx,.txt,.md,.csv,.srt,.vtt,audio/*"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                setBusy("import");
+                try {
+                  if (f.type.startsWith("audio/")) {
+                    setClips((c) => [...c, f]);
+                    await processAudio(f);
+                  } else {
+                    setText(await extract(f));
+                    setSource(f.name);
+                    if (!title) setTitle(f.name.replace(/\.[^.]+$/, ""));
+                  }
+                } catch (err) {
+                  toast.error((err as Error).message);
+                } finally {
+                  setBusy("");
+                }
+              }}
+            />
+          </label>
+          <p className="hint">
+            For private Google files, download a Doc as DOCX or a Sheet as CSV,
+            then upload it. Scanned PDFs need selectable text.
+          </p>
+        </TabsContent>
+        <TabsContent value="record">
+          <div className="record-panel">
+            <span className={recording ? "record-dot active" : "record-dot"} />
+            <strong>
+              {Math.floor(seconds / 60)
+                .toString()
+                .padStart(2, "0")}
+              :{(seconds % 60).toString().padStart(2, "0")}
+            </strong>
+            <p>
+              {recording
+                ? "Listening. Keep this tab open."
+                : "Capture your teacher’s explanation."}
+            </p>
+            <button
+              className={recording ? "secondary" : "primary"}
+              onClick={record}
+            >
+              {recording ? <Square size={16} /> : <Mic size={16} />}{" "}
+              {recording ? "Stop recording" : "Start recording"}
+            </button>
+            <small>
+              Check that your teacher permits recording. Audio is saved in
+              separate 10-minute clips.
+            </small>
+          </div>
+        </TabsContent>
+        <TabsContent value="link">
+          <label>
+            Google Doc, Google Sheet, or YouTube link
+            <input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://…"
+            />
+          </label>
+          <button
+            className="secondary"
+            disabled={!!busy || !url}
+            onClick={async () => {
+              setBusy("import");
+              try {
+                const r = await api("import", "POST", { url });
+                setText(r.text);
+                setSource(r.source);
+                toast.success("Source imported. Add a title and save.");
+              } catch (e) {
+                toast.error((e as Error).message);
+              } finally {
+                setBusy("");
+              }
+            }}
+          >
+            <LinkIcon size={16} />
+            Import text
+          </button>
+          <p className="hint">
+            Google links must be viewable without signing in. YouTube needs
+            accessible captions; otherwise paste its transcript below.
+          </p>
+        </TabsContent>
+      </Tabs>
+      {clips.map((clip, i) => (
+        <div className="clip" key={i}>
+          <span>
+            Audio clip {i + 1} · {(clip.size / 1000000).toFixed(1)} MB
+          </span>
+          <button
+            className="secondary"
+            disabled={!!busy}
+            onClick={() => processAudio(clip)}
+          >
+            Transcribe
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Download recording"
+            onClick={() =>
+              download(
+                "lecture-" +
+                  (i + 1) +
+                  (clip.type.includes("mp4") ? ".m4a" : ".webm"),
+                clip,
+              )
+            }
+          >
+            <Download size={16} />
+          </button>
+        </div>
+      ))}
+      <div className="form-row">
+        <label>
+          Lesson title
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={160}
+            placeholder="The idea worth remembering"
+          />
+        </label>
+        <label>
+          Subject
+          <input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            maxLength={80}
+            placeholder="e.g. AP Biology"
+          />
+        </label>
+      </div>
+      <label>
+        Source text
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          maxLength={90000}
+          placeholder="Your transcript, document text, or notes will appear here…"
+          rows={6}
+        />
+      </label>
+      <div className="form-footer">
+        <span className="hint">
+          {text.length.toLocaleString()} / 90,000 characters
+        </span>
+        <button
+          className="primary"
+          disabled={!!busy || recording || !title.trim() || !text.trim()}
+          onClick={async () => {
+            setBusy("save");
+            try {
+              await onSave(
+                await api<Note>("notes", "POST", {
+                  title,
+                  subject,
+                  text,
+                  source,
+                  asset,
+                  assets,
+                }),
+              );
+            } catch (e) {
+              toast.error((e as Error).message);
+            } finally {
+              setBusy("");
+            }
+          }}
+        >
+          {busy ? (
+            <Busy>
+              {busy === "transcribe"
+                ? "Transcribing…"
+                : busy === "import"
+                  ? "Importing…"
+                  : "Saving…"}
+            </Busy>
+          ) : (
+            <>
+              Save lesson
+              <ArrowRight size={16} />
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }
-function CalendarView({data,refresh}:{data:Data;refresh:()=>Promise<void>}){
- const [date,setDate]=useState<Date|undefined>(new Date()),[modal,setModal]=useState(false),[busy,setBusy]=useState(false);const dayEvents=data.events.filter(e=>new Date(e.date).toDateString()===date?.toDateString()).sort((a,b)=>a.date.localeCompare(b.date));
- return <div className="workspace"><section className="workspace-heading"><div><span className="eyebrow">A LITTLE SPACE, EVERY DAY</span><h1>Your study rhythm<span className="accent">.</span></h1><p>Make a plan your future self will thank you for.</p></div><button className="primary" onClick={()=>setModal(true)}><Plus size={16}/>Plan a session</button></section><div className="calendar-layout"><section className="glass calendar-card"><Calendar mode="single" selected={date} onSelect={setDate} className="big-calendar" modifiers={{planned:data.events.map(e=>new Date(e.date))}} modifiersClassNames={{planned:'planned-day'}}/></section><section className="glass schedule"><span className="eyebrow">YOUR DAY, WITH INTENTION</span><h2>{date?.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</h2>{dayEvents.length?dayEvents.map(e=><div className="event-row" key={e.id}><Checkbox checked={e.done} onCheckedChange={async v=>{try{await api('events/'+e.id,'PUT',{...e,done:!!v});await refresh()}catch(err){toast.error((err as Error).message)}}}/><div className={e.done?'done':''}><strong>{e.title}</strong><small>{new Date(e.date).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}{e.noteId?' · '+(data.notes.find(n=>n.id===e.noteId)?.title||'Lesson removed'):''}</small></div><button className="icon-button" aria-label="Remove session" onClick={async()=>{try{await api('events/'+e.id,'DELETE');await refresh()}catch(err){toast.error((err as Error).message)}}}><Trash2 size={16}/></button></div>):<div className="empty"><CalendarDays size={30}/><h3>A little breathing room.</h3><p>No study sessions planned for this day.</p><button className="secondary" onClick={()=>setModal(true)}>Add a session</button></div>}<p className="hint">Sessions are saved in your account. Times follow your device’s time zone.</p></section></div><Dialog open={modal} onOpenChange={setModal}><DialogContent><DialogHeader><DialogTitle>Make time for a little progress.</DialogTitle><DialogDescription>Add a study session or exam to your calendar.</DialogDescription></DialogHeader><form className="generate-form" onSubmit={async e=>{e.preventDefault();setBusy(true);const b=new FormData(e.currentTarget);try{await api('events','POST',{title:b.get('title'),date:new Date(String(b.get('date'))).toISOString(),noteId:b.get('noteId')||'',done:false});await refresh();setModal(false)}catch(err){toast.error((err as Error).message)}finally{setBusy(false)}}}><label>Session or exam title<input name="title" required maxLength={160} placeholder="Review Unit 3"/></label><label>When<input name="date" type="datetime-local" required defaultValue={date?new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,11)+'16:00':''}/></label><label>Lesson (optional)<select name="noteId"><option value="">No linked lesson</option>{data.notes.map(n=><option key={n.id} value={n.id}>{n.title}</option>)}</select></label><button className="primary" disabled={busy}>{busy?<Busy>Saving</Busy>:'Save session'}</button></form></DialogContent></Dialog></div>
+function Generate({
+  notes,
+  selected,
+  onSave,
+  onImport,
+}: {
+  notes: Note[];
+  selected: string | null;
+  onSave: (d: Deck) => Promise<void>;
+  onImport: () => void;
+}) {
+  const [ids, setIds] = useState<string[]>(selected ? [selected] : []),
+    [title, setTitle] = useState(""),
+    [count, setCount] = useState("8"),
+    [busy, setBusy] = useState(false);
+  return (
+    <div className="generate-form">
+      <label>
+        Study set title
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. Cells & energy — Unit 3"
+          maxLength={160}
+        />
+      </label>
+      <div className="lesson-checklist">
+        {notes.map((n) => (
+          <label key={n.id} className="check-row">
+            <Checkbox
+              checked={ids.includes(n.id)}
+              onCheckedChange={(v) =>
+                setIds((x) =>
+                  v ? [...x, n.id] : x.filter((id) => id !== n.id),
+                )
+              }
+            />
+            <span>
+              <strong>{n.title}</strong>
+              <small>{n.subject || "General"}</small>
+            </span>
+          </label>
+        ))}
+        {!notes.length && <p>Add a lesson before generating a study set.</p>}
+      </div>
+      <button className="text-button" onClick={onImport}>
+        <Upload size={15} />
+        Import a PDF, Google Doc or Sheet CSV
+      </button>
+      <label>
+        Questions and flashcards
+        <SelectBox
+          value={count}
+          onChange={setCount}
+          options={["4", "8", "12", "20"].map((x) => [x, x + " of each"])}
+        />
+      </label>
+      <p className="hint">
+        AP-style practice with a rationale for every answer option. Generated
+        from your selected lessons; independent of College Board.
+      </p>
+      <button
+        className="primary"
+        disabled={busy || !ids.length || !title.trim()}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await onSave(
+              await api<Deck>("generate", "POST", {
+                noteIds: ids,
+                title,
+                count: Number(count),
+              }),
+            );
+          } catch (e) {
+            toast.error((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? (
+          <Busy>Building your study set…</Busy>
+        ) : (
+          <>
+            <Sparkles size={16} />
+            Generate study set
+          </>
+        )}
+      </button>
+    </div>
+  );
 }
-function Chat({notes}:{notes:Note[]}){
- const [ids,setIds]=useState<string[]>([]),[question,setQuestion]=useState(''),[messages,setMessages]=useState<{role:string;text:string;citations?:{noteId:string;quote:string}[]}[]>([]),[busy,setBusy]=useState(false);
- return <div className="workspace"><section className="workspace-heading"><div><span className="eyebrow">ANSWERS, ROOTED IN YOUR LEARNING</span><h1>Ask your notes<span className="accent">.</span></h1><p>Just your selected lessons. No web searches.</p></div><span className="pill"><BookOpen size={14}/>Source-grounded</span></section><div className="chat-layout"><aside className="glass chat-sources"><h3>Choose your sources</h3><p className="hint">Select up to 12 lessons. Each question uses these sources.</p>{notes.map(n=><label className="check-row" key={n.id}><Checkbox checked={ids.includes(n.id)} onCheckedChange={v=>setIds(x=>v?[...x,n.id]:x.filter(id=>id!==n.id))}/><span>{n.title}</span></label>)}{!notes.length&&<p>Add a lesson first.</p>}</aside><section className="glass chat-box"><div className="messages" aria-live="polite">{!messages.length&&<div className="empty"><MessageCircle size={35}/><h2>There’s no silly question.</h2><p>Ask for an explanation, connect two ideas, or find the part you missed.</p><button className="secondary" onClick={()=>setQuestion('What are the most important ideas in these lessons, and how do they connect?')}>Help me see the big picture<ArrowUpRight size={15}/></button></div>}{messages.map((m,i)=><div key={i} className={'message '+m.role}><span className="eyebrow">{m.role==='user'?'YOU':'STILLNOTES'}</span><Mark text={m.text}/>{m.citations?.map((c,j)=><blockquote key={j}><strong>{notes.find(n=>n.id===c.noteId)?.title}</strong><p>{c.quote}</p></blockquote>)}</div>)}{busy&&<Busy>Reading your selected notes…</Busy>}</div><form className="chat-input" onSubmit={async e=>{e.preventDefault();const q=question.trim();if(!q||!ids.length)return;setQuestion('');setBusy(true);setMessages(x=>[...x,{role:'user',text:q}]);try{const r=await api('chat','POST',{question:q,noteIds:ids});setMessages(x=>[...x,{role:'assistant',text:r.answer,citations:r.citations}])}catch(err){toast.error((err as Error).message);setQuestion(q)}finally{setBusy(false)}}}><input aria-label="Ask about your notes" value={question} onChange={e=>setQuestion(e.target.value)} maxLength={3000} placeholder={ids.length?'What would you like to understand?':'Choose your lesson sources to begin…'}/><button className="primary" disabled={busy||!ids.length||ids.length>12||!question.trim()} aria-label="Send question"><ArrowRight size={18}/></button></form><p className="chat-footnote">AI can make mistakes. Check the quoted passages. This conversation clears when you leave this view.</p></section></div></div>
+function SettingsView({
+  user,
+  onSave,
+  onLogout,
+}: {
+  user: User;
+  onSave: (u: User) => void;
+  onLogout: () => void;
+}) {
+  const [s, setS] = useState({ ...defaultSettings, ...user.settings }),
+    [aiKey, setAiKey] = useState(""),
+    [fishKey, setFishKey] = useState(""),
+    [clearAi, setClearAi] = useState(false),
+    [clearFish, setClearFish] = useState(false),
+    [busy, setBusy] = useState(false);
+  const [models, setModels] = useState<
+    { id: string; name: string; free: boolean }[]
+  >([]);
+  const [connection, setConnection] = useState("");
+  async function saveConnection() {
+    const r = await api("settings", "PUT", {
+      ...s,
+      aiKey,
+      fishKey,
+      clearAi,
+      clearFish,
+    });
+    onSave(r.user);
+    setS(r.user.settings);
+    setAiKey("");
+    setFishKey("");
+    setClearAi(false);
+    setClearFish(false);
+    return r;
+  }
+  async function checkConnection(load = false) {
+    setBusy(true);
+    setConnection("");
+    try {
+      await saveConnection();
+      if (load) {
+        const r = await api("ai/models");
+        setModels(r.models);
+        setConnection("Current models loaded. Choose one below.");
+      } else {
+        const r = await api("ai/test", "POST");
+        setConnection("Connected — " + r.model);
+        toast.success("AI connection is working.");
+      }
+    } catch (e) {
+      setConnection((e as Error).message);
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="workspace narrow">
+      <section className="workspace-heading">
+        <div>
+          <span className="eyebrow">MAKE YOURSELF AT HOME</span>
+          <h1>
+            Your preferences<span className="accent">.</span>
+          </h1>
+          <p>A workspace that feels like you.</p>
+        </div>
+      </section>
+      <form
+        className="glass settings-panel"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          try {
+            const r = await api("settings", "PUT", {
+              ...s,
+              aiKey,
+              fishKey,
+              clearAi,
+              clearFish,
+            });
+            onSave(r.user);
+            setS(r.user.settings);
+            setAiKey("");
+            setFishKey("");
+            setClearAi(false);
+            setClearFish(false);
+            toast.success("Settings saved across your devices.");
+          } catch (e) {
+            toast.error((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <h2>
+          <Sparkles size={20} />
+          Your AI connection
+        </h2>
+        <p>
+          Keys are encrypted in your account and used only by the backend. Leave
+          a key blank to keep the saved value.
+        </p>
+        <div className="form-row">
+          <label>
+            Text AI provider
+            <SelectBox
+              value={s.provider}
+              onChange={(v) =>
+                setS({
+                  ...s,
+                  provider: v as Settings["provider"],
+                  model: providers[v as Settings["provider"]].model,
+                  hasAiKey:
+                    v === user.settings.provider
+                      ? user.settings.hasAiKey
+                      : false,
+                })
+              }
+              options={[
+                ["groq", "Groq (gsk_ keys)"],
+                ["grok", "xAI Grok"],
+                ["deepseek", "DeepSeek (paid API)"],
+                ["openrouter", "OpenRouter · free models available"],
+              ]}
+            />
+          </label>
+          <label>
+            Model
+            <input
+              list="available-ai-models"
+              value={s.model}
+              onChange={(e) => setS({ ...s, model: e.target.value })}
+            />
+          </label>
+        </div>
+        <datalist id="available-ai-models">
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+              {m.free ? " · Free" : ""}
+            </option>
+          ))}
+        </datalist>
+        {s.provider === "openrouter" && (
+          <p className="provider-help">
+            Use <strong>openrouter/free</strong> for the free model router. Free
+            models have usage limits and may be busy. A free OpenRouter API key
+            is required. Selecting a paid model can incur charges.
+          </p>
+        )}
+        {s.provider === "deepseek" && (
+          <p className="provider-help">
+            DeepSeek’s API requires its own API key and credits. Its free chat
+            app does not include free API access.
+          </p>
+        )}
+        <label>
+          AI API key{" "}
+          <span className="status-label">
+            {s.hasAiKey ? "Key saved" : "Not connected"}
+          </span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={aiKey}
+            onChange={(e) => setAiKey(e.target.value)}
+            placeholder="Paste a new key to replace the saved one"
+          />
+        </label>
+        {s.hasAiKey && (
+          <label className="check-row compact">
+            <Checkbox
+              checked={clearAi}
+              onCheckedChange={(v) => setClearAi(!!v)}
+            />
+            Remove saved AI key
+          </label>
+        )}
+        <div className="connection-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => checkConnection()}
+          >
+            <Sparkles size={16} />
+            Save & test connection
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => checkConnection(true)}
+          >
+            Load current models
+          </button>
+        </div>
+        {connection && (
+          <p className="connection-result" role="status">
+            {connection}
+          </p>
+        )}
+        <h2>
+          <Headphones size={20} />
+          Lecture audio & voice
+        </h2>
+        <label>
+          Fish Audio API key{" "}
+          <span className="status-label">
+            {s.hasFishKey ? "Key saved" : "Not connected"}
+          </span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={fishKey}
+            onChange={(e) => setFishKey(e.target.value)}
+            placeholder="Paste a new Fish Audio key"
+          />
+        </label>
+        {s.hasFishKey && (
+          <label className="check-row compact">
+            <Checkbox
+              checked={clearFish}
+              onCheckedChange={(v) => setClearFish(!!v)}
+            />
+            Remove saved Fish Audio key
+          </label>
+        )}
+        <label>
+          Fish Audio voice ID
+          <input
+            value={s.voiceId}
+            onChange={(e) => setS({ ...s, voiceId: e.target.value })}
+            placeholder="Needed for read-aloud; transcription works without it"
+          />
+        </label>
+        <h2>
+          <Sun size={20} />
+          Your environment
+        </h2>
+        <label>
+          Appearance
+          <SelectBox
+            value={s.theme}
+            onChange={(v) => setS({ ...s, theme: v as Settings["theme"] })}
+            options={[
+              ["system", "Follow device"],
+              ["light", "Light — morning mist"],
+              ["dark", "Dark — after hours"],
+            ]}
+          />
+        </label>
+        <label className="switch-row">
+          <div>
+            <strong>Gen Z mode</strong>
+            <p>
+              A little slang in AI explanations. Same concepts, lighter
+              delivery.
+            </p>
+          </div>
+          <Switch
+            checked={s.slang}
+            onCheckedChange={(v) => setS({ ...s, slang: v })}
+          />
+        </label>
+        <label className="switch-row">
+          <div>
+            <strong>Brainrot corner</strong>
+            <p>
+              An optional original runner, parkour or driving animation beside
+              your study space.
+            </p>
+          </div>
+          <Switch
+            checked={s.brainrot}
+            onCheckedChange={(v) => setS({ ...s, brainrot: v })}
+          />
+        </label>
+        <button className="primary" disabled={busy}>
+          {busy ? (
+            <Busy>Saving</Busy>
+          ) : (
+            <>
+              <Check size={16} />
+              Save preferences
+            </>
+          )}
+        </button>
+      </form>
+      <section className="glass settings-panel">
+        <h2>
+          <Cloud size={20} />
+          Account & your data
+        </h2>
+        <p>{user.email}</p>
+        <button
+          className="secondary"
+          onClick={async () => {
+            try {
+              download(
+                "still-notes-backup.json",
+                JSON.stringify(await api("export"), null, 2),
+              );
+            } catch (e) {
+              toast.error((e as Error).message);
+            }
+          }}
+        >
+          <Download size={16} />
+          Export all study data
+        </button>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const b = new FormData(e.currentTarget);
+            try {
+              await api("auth/password", "POST", {
+                current: b.get("current"),
+                password: b.get("password"),
+              });
+              toast.success("Password changed. Sign in again on each device.");
+              onLogout();
+            } catch (e) {
+              toast.error((e as Error).message);
+            }
+          }}
+        >
+          <h3>Change password</h3>
+          <div className="form-row">
+            <label>
+              Current password
+              <input
+                name="current"
+                type="password"
+                required
+                autoComplete="current-password"
+              />
+            </label>
+            <label>
+              New password
+              <input
+                name="password"
+                type="password"
+                minLength={10}
+                maxLength={128}
+                required
+                autoComplete="new-password"
+              />
+            </label>
+          </div>
+          <button className="secondary">Update password</button>
+        </form>
+      </section>
+    </div>
+  );
+}
+function CalendarView({
+  data,
+  refresh,
+}: {
+  data: Data;
+  refresh: () => Promise<void>;
+}) {
+  const [date, setDate] = useState<Date | undefined>(new Date()),
+    [modal, setModal] = useState(false),
+    [busy, setBusy] = useState(false);
+  const dayEvents = data.events
+    .filter((e) => new Date(e.date).toDateString() === date?.toDateString())
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return (
+    <div className="workspace">
+      <section className="workspace-heading">
+        <div>
+          <span className="eyebrow">A LITTLE SPACE, EVERY DAY</span>
+          <h1>
+            Your study rhythm<span className="accent">.</span>
+          </h1>
+          <p>Make a plan your future self will thank you for.</p>
+        </div>
+        <button className="primary" onClick={() => setModal(true)}>
+          <Plus size={16} />
+          Plan a session
+        </button>
+      </section>
+      <div className="calendar-layout">
+        <section className="glass calendar-card">
+          <Calendar
+            mode="single"
+            selected={date}
+            onSelect={setDate}
+            className="big-calendar"
+            modifiers={{ planned: data.events.map((e) => new Date(e.date)) }}
+            modifiersClassNames={{ planned: "planned-day" }}
+          />
+        </section>
+        <section className="glass schedule">
+          <span className="eyebrow">YOUR DAY, WITH INTENTION</span>
+          <h2>
+            {date?.toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+          </h2>
+          {dayEvents.length ? (
+            dayEvents.map((e) => (
+              <div className="event-row" key={e.id}>
+                <Checkbox
+                  checked={e.done}
+                  onCheckedChange={async (v) => {
+                    try {
+                      await api("events/" + e.id, "PUT", { ...e, done: !!v });
+                      await refresh();
+                    } catch (err) {
+                      toast.error((err as Error).message);
+                    }
+                  }}
+                />
+                <div className={e.done ? "done" : ""}>
+                  <strong>{e.title}</strong>
+                  <small>
+                    {new Date(e.date).toLocaleTimeString(undefined, {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                    {e.noteId
+                      ? " · " +
+                        (data.notes.find((n) => n.id === e.noteId)?.title ||
+                          "Lesson removed")
+                      : ""}
+                  </small>
+                </div>
+                <button
+                  className="icon-button"
+                  aria-label="Remove session"
+                  onClick={async () => {
+                    try {
+                      await api("events/" + e.id, "DELETE");
+                      await refresh();
+                    } catch (err) {
+                      toast.error((err as Error).message);
+                    }
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="empty">
+              <CalendarDays size={30} />
+              <h3>A little breathing room.</h3>
+              <p>No study sessions planned for this day.</p>
+              <button className="secondary" onClick={() => setModal(true)}>
+                Add a session
+              </button>
+            </div>
+          )}
+          <p className="hint">
+            Sessions are saved in your account. Times follow your device’s time
+            zone.
+          </p>
+        </section>
+      </div>
+      <Dialog open={modal} onOpenChange={setModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Make time for a little progress.</DialogTitle>
+            <DialogDescription>
+              Add a study session or exam to your calendar.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="generate-form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              const b = new FormData(e.currentTarget);
+              try {
+                await api("events", "POST", {
+                  title: b.get("title"),
+                  date: new Date(String(b.get("date"))).toISOString(),
+                  noteId: b.get("noteId") || "",
+                  done: false,
+                });
+                await refresh();
+                setModal(false);
+              } catch (err) {
+                toast.error((err as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label>
+              Session or exam title
+              <input
+                name="title"
+                required
+                maxLength={160}
+                placeholder="Review Unit 3"
+              />
+            </label>
+            <label>
+              When
+              <input
+                name="date"
+                type="datetime-local"
+                required
+                defaultValue={
+                  date
+                    ? new Date(
+                        date.getTime() - date.getTimezoneOffset() * 60000,
+                      )
+                        .toISOString()
+                        .slice(0, 11) + "16:00"
+                    : ""
+                }
+              />
+            </label>
+            <label>
+              Lesson (optional)
+              <select name="noteId">
+                <option value="">No linked lesson</option>
+                {data.notes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="primary" disabled={busy}>
+              {busy ? <Busy>Saving</Busy> : "Save session"}
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function Chat({ notes }: { notes: Note[] }) {
+  const [ids, setIds] = useState<string[]>([]),
+    [question, setQuestion] = useState(""),
+    [messages, setMessages] = useState<
+      {
+        role: string;
+        text: string;
+        citations?: { noteId: string; quote: string }[];
+      }[]
+    >([]),
+    [busy, setBusy] = useState(false);
+  return (
+    <div className="workspace">
+      <section className="workspace-heading">
+        <div>
+          <span className="eyebrow">ANSWERS, ROOTED IN YOUR LEARNING</span>
+          <h1>
+            Ask your notes<span className="accent">.</span>
+          </h1>
+          <p>Just your selected lessons. No web searches.</p>
+        </div>
+        <span className="pill">
+          <BookOpen size={14} />
+          Source-grounded
+        </span>
+      </section>
+      <div className="chat-layout">
+        <aside className="glass chat-sources">
+          <h3>Choose your sources</h3>
+          <p className="hint">
+            Select up to 12 lessons. Each question uses these sources.
+          </p>
+          {notes.map((n) => (
+            <label className="check-row" key={n.id}>
+              <Checkbox
+                checked={ids.includes(n.id)}
+                onCheckedChange={(v) =>
+                  setIds((x) =>
+                    v ? [...x, n.id] : x.filter((id) => id !== n.id),
+                  )
+                }
+              />
+              <span>{n.title}</span>
+            </label>
+          ))}
+          {!notes.length && <p>Add a lesson first.</p>}
+        </aside>
+        <section className="glass chat-box">
+          <div className="messages" aria-live="polite">
+            {!messages.length && (
+              <div className="empty">
+                <MessageCircle size={35} />
+                <h2>There’s no silly question.</h2>
+                <p>
+                  Ask for an explanation, connect two ideas, or find the part
+                  you missed.
+                </p>
+                <button
+                  className="secondary"
+                  onClick={() =>
+                    setQuestion(
+                      "What are the most important ideas in these lessons, and how do they connect?",
+                    )
+                  }
+                >
+                  Help me see the big picture
+                  <ArrowUpRight size={15} />
+                </button>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className={"message " + m.role}>
+                <span className="eyebrow">
+                  {m.role === "user" ? "YOU" : "STILLNOTES"}
+                </span>
+                <Mark text={m.text} />
+                {m.citations?.map((c, j) => (
+                  <blockquote key={j}>
+                    <strong>
+                      {notes.find((n) => n.id === c.noteId)?.title}
+                    </strong>
+                    <p>{c.quote}</p>
+                  </blockquote>
+                ))}
+              </div>
+            ))}
+            {busy && <Busy>Reading your selected notes…</Busy>}
+          </div>
+          <form
+            className="chat-input"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const q = question.trim();
+              if (!q || !ids.length) return;
+              setQuestion("");
+              setBusy(true);
+              setMessages((x) => [...x, { role: "user", text: q }]);
+              try {
+                const r = await api("chat", "POST", {
+                  question: q,
+                  noteIds: ids,
+                });
+                setMessages((x) => [
+                  ...x,
+                  { role: "assistant", text: r.answer, citations: r.citations },
+                ]);
+              } catch (err) {
+                toast.error((err as Error).message);
+                setQuestion(q);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <input
+              aria-label="Ask about your notes"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              maxLength={3000}
+              placeholder={
+                ids.length
+                  ? "What would you like to understand?"
+                  : "Choose your lesson sources to begin…"
+              }
+            />
+            <button
+              className="primary"
+              disabled={
+                busy || !ids.length || ids.length > 12 || !question.trim()
+              }
+              aria-label="Send question"
+            >
+              <ArrowRight size={18} />
+            </button>
+          </form>
+          <p className="chat-footnote">
+            AI can make mistakes. Check the quoted passages. This conversation
+            clears when you leave this view.
+          </p>
+        </section>
+      </div>
+    </div>
+  );
 }

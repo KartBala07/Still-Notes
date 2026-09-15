@@ -1,6 +1,6 @@
 import {test,after,before} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import {build} from 'esbuild';
 import {Miniflare} from 'miniflare';
 import {passwordHash,passwordMatches,seal,unseal} from '../lib/security';
@@ -13,8 +13,8 @@ const call=async(path:string,method='GET',body?:unknown,token?:string)=>{
 };
 before(async()=>{
  const output=await build({stdin:{contents:"import {handle} from './lib/server'; export default {fetch:handle};",resolveDir:process.cwd()},bundle:true,format:'esm',platform:'browser',external:['cloudflare:workers'],write:false});
- mf=new Miniflare({modules:true,script:output.outputFiles[0].text,compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{APP_ENCRYPTION_KEY:'test-only-secret-'.repeat(4),OWNER_BOOTSTRAP:JSON.stringify({id:'owner-test',email:'owner@example.test',name:'Owner',password:await passwordHash('owner-test-password'),keys:await seal({ai:'owner-test-key'},'test-only-secret-'.repeat(4))})}});
- db=await mf.getD1Database('DB');const schema=await readFile('drizzle/0000_worried_bloodscream.sql','utf8');for(const statement of schema.split('--> statement-breakpoint').filter(x=>x.trim()))await db.prepare(statement).run();
+ mf=new Miniflare({modules:true,script:output.outputFiles[0].text,compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{APP_ENCRYPTION_KEY:'test-only-secret-'.repeat(4),OWNER_BOOTSTRAP:JSON.stringify({id:'owner-test',email:'owner@example.test',name:'Owner',password:await passwordHash('owner-test-password'),keys:await seal({ai:'gsk_owner-test-key'},'test-only-secret-'.repeat(4))})}});
+ db=await mf.getD1Database('DB');for(const file of (await readdir('drizzle')).filter(x=>x.endsWith('.sql')).sort()){const schema=await readFile('drizzle/'+file,'utf8');for(const statement of schema.split('--> statement-breakpoint').filter(x=>x.trim()))await db.prepare(statement).run();}
  const first=await call('auth/signup','POST',{email:'first@example.test',password:'test-password-8391',name:'First'});assert.equal(first.status,200);a=first.body;
  const second=await call('auth/signup','POST',{email:'second@example.test',password:'test-password-1927',name:'Second'});assert.equal(second.status,200);b=second.body;
 });
