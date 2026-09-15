@@ -49,3 +49,6 @@ next-env.d.ts
 /.private/
 
 *.tsbuildinfo
+
+convex-web/
+lib/convex-web-assets.js
