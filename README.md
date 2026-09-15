@@ -14,8 +14,8 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 - AI-organized notes, flashcards, quizzes, timed AP-style multiple-choice practice and detailed rationales for every option.
 - Match and Crash study games, spaced flashcard review, mistake notebook, focus timer and study calendar.
 - Chat grounded in selected lessons, with verified exact source quotations and no web tools.
-- Integrated Canvas Pro course dashboard, assignment priorities, grades, weekly study plan, announcements and curve calculator. Course data syncs privately; Canvas access tokens stay in the optional local connector.
-- Ollama and OpenCode options for local study generation, with explicit model selection and a paired loopback connector. Cloud providers remain available on other devices.
+- Canvas Pro coursework workspace: dashboard, To Do/tests, late work, syllabus rules, weighted what-if grades, timed study plans with breaks, modules/documents, announcements, private curve history and course-grounded chat. Reviewed Canvas text/URL/file submissions and audio responses use the paired connector. Course data syncs privately; Canvas tokens stay in connector memory for two hours.
+- Ollama and OpenCode options for local study generation, with connected-model discovery, connection tests, explicit model selection and a paired loopback connector. Cloud providers remain available on other devices.
 - Opt-in Gen Z mode adapts explanation length, familiar wording and emoji use from simple per-user statistics; reset the learned style in Settings.
 - An optional YouTube video corner accepts your own runner, parkour or driving video links. Nothing embeds until you load a video; minimize stops playback.
 - JSON account export and Markdown lesson export.

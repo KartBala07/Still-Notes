@@ -1,4 +1,5 @@
 "use client";
+import "./canvas-pro.css";
 import { useEffect, useMemo, useState } from "react";
 import {
   GraduationCap,
@@ -15,7 +16,22 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, download } from "../lib/client";
-import { companion } from "../lib/local-ai";
+import {
+  companion,
+  connectCanvas,
+  canvasRequest,
+  disconnectCanvas,
+  canvasSession,
+} from "../lib/local-ai";
+import { emptyTools, type SchoolTools } from "../lib/canvas/tools";
+import {
+  WorkLists,
+  DetailedPlan,
+  CurveHistory,
+  SyllabusEditor,
+} from "./school-planning";
+import { CourseExplorer, AssignmentExtras } from "./school-course";
+import { CourseworkChat } from "./school-chat";
 import {
   emptySchool,
   type SchoolData,
@@ -34,10 +50,16 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 const tabs = [
   "Overview",
   "Assignments",
+  "Tests & quizzes",
+  "To-do",
+  "Late work",
+  "Courses",
+  "Documents",
   "Grades",
   "Study plan",
   "Announcements",
   "Curve calculator",
+  "AI assistant",
 ];
 export default function School({
   onLesson,
@@ -46,6 +68,10 @@ export default function School({
   onLesson: (id: string) => void;
   onCalendar: () => void;
 }) {
+  const [tools, setTools] = useState<SchoolTools>(emptyTools),
+    [detailCourse, setDetailCourse] = useState(""),
+    [annQuery, setAnnQuery] = useState(""),
+    [unread, setUnread] = useState(false);
   const [data, setData] = useState<SchoolData>(emptySchool),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
@@ -64,9 +90,12 @@ export default function School({
     });
   useEffect(() => {
     let active = true;
-    api<SchoolData>("school")
-      .then((d) => {
-        if (active) setData(d);
+    Promise.all([api<SchoolData>("school"), api<SchoolTools>("school-tools")])
+      .then(([d, t]) => {
+        if (active) {
+          setData(d);
+          setTools(t);
+        }
       })
       .catch((e) => toast.error(e.message))
       .finally(() => {
@@ -92,6 +121,18 @@ export default function School({
     const saved = await api<SchoolData>("school", "PUT", next);
     setData(saved);
   }
+  async function saveTools(next: SchoolTools) {
+    setTools(await api<SchoolTools>("school-tools", "PUT", next));
+  }
+  const planning = {
+    data,
+    tools,
+    save,
+    saveTools,
+    select: setSelected,
+    busy,
+    onCalendar,
+  };
   async function importFile(file?: File) {
     if (!file) return;
     if (file.size > 1100000) throw Error("Choose a snapshot below 1 MB.");
@@ -219,6 +260,7 @@ export default function School({
           onClick={() =>
             action(async () => {
               setData(await api<SchoolData>("school"));
+              setTools(await api<SchoolTools>("school-tools"));
               toast.success("Coursework refreshed");
             })
           }
@@ -281,7 +323,17 @@ export default function School({
                       {letter(c.currentScore)}
                     </span>
                   </div>
-                  <h2>{c.name}</h2>
+                  <h2>
+                    <button
+                      className="course-title-button"
+                      onClick={() => {
+                        setDetailCourse(c.id);
+                        setTab("Courses");
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  </h2>
                   <div className="course-score">
                     <strong>
                       {c.currentScore == null
@@ -442,110 +494,124 @@ export default function School({
               )}
             </section>
           )}
-          {tab === "Study plan" && (
-            <>
-              <div className="plan-controls">
-                <p>
-                  Priorities use due dates, grade targets, assignment weight and
-                  points.
-                </p>
-                <label>
-                  Daily study minutes
+          {["Tests & quizzes", "To-do", "Late work"].includes(tab) && (
+            <WorkLists {...planning} mode={tab} />
+          )}
+          {tab === "Late work" && (
+            <section className="glass school-panel">
+              <h2>Default syllabus policy</h2>
+              <p className="hint">
+                Use Courses → Syllabus for a class-specific policy.
+              </p>
+              <SyllabusEditor
+                courseId="_all"
+                tools={tools}
+                saveTools={saveTools}
+              />
+            </section>
+          )}
+          {tab === "Courses" && (
+            <CourseExplorer
+              key={"course-" + detailCourse}
+              {...planning}
+              onLesson={onLesson}
+              initialCourse={detailCourse}
+            />
+          )}
+          {tab === "Documents" && (
+            <CourseExplorer
+              key="documents"
+              {...planning}
+              onLesson={onLesson}
+              startTab="Files"
+            />
+          )}
+          {tab === "Study plan" && <DetailedPlan {...planning} />}
+          {tab === "AI assistant" && <CourseworkChat {...planning} />}
+          {tab === "Announcements" && (
+            <div className="announcement-list">
+              <div className="assignment-filters">
+                <input
+                  aria-label="Search announcements"
+                  placeholder="Search announcements…"
+                  value={annQuery}
+                  onChange={(e) => setAnnQuery(e.target.value)}
+                />
+                <label className="check-line">
                   <input
-                    type="number"
-                    min="15"
-                    max="480"
-                    defaultValue={data.dailyMinutes}
-                    onBlur={(e) => {
-                      const n = Number(e.target.value);
-                      if (n >= 15 && n <= 480 && n !== data.dailyMinutes)
-                        action(() => save({ ...data, dailyMinutes: n }));
-                    }}
+                    type="checkbox"
+                    checked={unread}
+                    onChange={(e) => setUnread(e.target.checked)}
                   />
+                  Unread only
                 </label>
               </div>
-              <div className="plan-grid">
-                {plan.days.map((d, i) => (
-                  <article className="glass plan-day" key={d.date}>
-                    <div>
-                      <h3>
-                        {i === 0
-                          ? "Today"
-                          : new Date(d.date).toLocaleDateString(undefined, {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                            })}
-                      </h3>
-                      <span>{d.used} min</span>
-                    </div>
-                    {d.slots.map((s, j) => (
-                      <button key={j} onClick={() => setSelected(s.task)}>
-                        <span>{s.task.title}</span>
-                        <strong>{s.minutes} min</strong>
-                      </button>
-                    ))}
-                    {!d.slots.length && <p>Room to recharge.</p>}
-                    {!!d.slots.length && (
+              {data.announcements
+                .filter(
+                  (a) =>
+                    (!unread || !tools.read.includes(a.id)) &&
+                    (!annQuery ||
+                      (a.title + a.text)
+                        .toLowerCase()
+                        .includes(annQuery.toLowerCase())),
+                )
+                .map((a) => (
+                  <article
+                    className="glass school-panel"
+                    key={a.courseId + a.id}
+                  >
+                    <span className="eyebrow">
+                      {data.courses.find((c) => c.id === a.courseId)?.name}
+                    </span>
+                    <h2>{a.title}</h2>
+                    <button
+                      className="text-link"
+                      onClick={() =>
+                        action(async () => {
+                          const read = tools.read.includes(a.id)
+                            ? tools.read.filter((id) => id !== a.id)
+                            : [...tools.read, a.id];
+                          await saveTools({ ...tools, read });
+                        })
+                      }
+                    >
+                      {tools.read.includes(a.id)
+                        ? "✓ Read · mark unread"
+                        : "Mark read"}
+                    </button>
+                    {!tools.read.includes(a.id) && canvasSession() && (
                       <button
                         className="text-link"
-                        disabled={busy}
                         onClick={() =>
                           action(async () => {
-                            const when = new Date(d.date);
-                            when.setHours(18, 0, 0, 0);
-                            await api("events", "POST", {
-                              title: `Study: ${d.slots[0].task.title}`.slice(
-                                0,
-                                150,
-                              ),
-                              date: when.toISOString(),
+                            await canvasRequest("read", {
+                              courseId: a.courseId,
+                              id: a.id,
                             });
-                            toast.success(
-                              "Study session added to your calendar",
-                            );
-                            onCalendar();
+                            await saveTools({
+                              ...tools,
+                              read: [...tools.read, a.id],
+                            });
                           })
                         }
                       >
-                        <CalendarDays size={15} />
-                        Add session to calendar
+                        Mark read in Canvas
                       </button>
+                    )}
+                    <p className="source-text">{a.text}</p>
+                    {a.url && (
+                      <a
+                        className="text-link"
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open in Canvas
+                        <ExternalLink size={14} />
+                      </a>
                     )}
                   </article>
                 ))}
-              </div>
-              {plan.remaining.size > 0 && (
-                <p className="hint">
-                  {plan.remaining.size} assignments need more time than fits in
-                  your current plan. Increase your daily time or start earlier;
-                  no extra time is silently assumed.
-                </p>
-              )}
-            </>
-          )}
-          {tab === "Announcements" && (
-            <div className="announcement-list">
-              {data.announcements.map((a) => (
-                <article className="glass school-panel" key={a.courseId + a.id}>
-                  <span className="eyebrow">
-                    {data.courses.find((c) => c.id === a.courseId)?.name}
-                  </span>
-                  <h2>{a.title}</h2>
-                  <p className="source-text">{a.text}</p>
-                  {a.url && (
-                    <a
-                      className="text-link"
-                      href={a.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open in Canvas
-                      <ExternalLink size={14} />
-                    </a>
-                  )}
-                </article>
-              ))}
               {!data.announcements.length && (
                 <p className="school-empty glass">
                   No announcements in your last sync.
@@ -553,52 +619,7 @@ export default function School({
               )}
             </div>
           )}
-          {tab === "Curve calculator" && (
-            <section className="glass school-panel curve-panel">
-              <div>
-                <span className="eyebrow">WHAT IF?</span>
-                <h2>Explore a grade curve.</h2>
-                <p>This calculator never changes your Canvas grades.</p>
-                <div className="curve-inputs">
-                  {(
-                    [
-                      ["raw", "Points earned"],
-                      ["possible", "Points possible"],
-                      ["added", "Curve points"],
-                      ["target", "Target percent"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <label key={key}>
-                      {label}
-                      <input
-                        type="number"
-                        min={key === "possible" ? 1 : 0}
-                        max="10000"
-                        value={numbers[key]}
-                        onChange={(e) =>
-                          setNumbers({
-                            ...numbers,
-                            [key]: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="curve-result">
-                <span>With this curve</span>
-                <strong>
-                  {result ? result.curvedPct.toFixed(1) + "%" : "—"}
-                </strong>
-                <p>
-                  {result
-                    ? `${result.needed} extra points needed to reach ${numbers.target}%`
-                    : "Enter positive possible points."}
-                </p>
-              </div>
-            </section>
-          )}
+          {tab === "Curve calculator" && <CurveHistory {...planning} />}
           <div className="school-footer">
             <span>
               {data.synced
@@ -609,6 +630,17 @@ export default function School({
             <button className="text-link" onClick={() => setModal("course")}>
               <Plus size={14} />
               Add class
+            </button>
+            <button
+              className="text-link"
+              onClick={() =>
+                action(async () => {
+                  await disconnectCanvas();
+                  toast.success("Canvas disconnected on this device");
+                })
+              }
+            >
+              Disconnect Canvas
             </button>
           </div>
         </>
@@ -643,7 +675,8 @@ export default function School({
               onSubmit={(e) => {
                 e.preventDefault();
                 action(async () => {
-                  const result = await companion("/canvas", { base, token });
+                  await connectCanvas(base, token);
+                  const result = await canvasRequest("sync");
                   const next = importSchool(result);
                   const manual = data.courses.filter(
                     (c) => c.origin === "manual",
@@ -688,8 +721,9 @@ export default function School({
             >
               <p className="hint">
                 Pair the local connector in Settings first. Your token is sent
-                only to that connector and Canvas, and is cleared when this
-                dialog closes.
+                only to that connector and Canvas. The connector retains it in
+                memory for two hours; the password field clears when this dialog
+                closes.
               </p>
               <label>
                 School URL
@@ -936,6 +970,13 @@ export default function School({
                 </a>
               )}
             </div>
+            {selected && (
+              <AssignmentExtras
+                key={selected.id}
+                {...planning}
+                task={selected}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>

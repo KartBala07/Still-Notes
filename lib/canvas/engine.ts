@@ -128,29 +128,16 @@ export function letter(score: number | null) {
                 ? "C"
                 : score >= 70
                   ? "C−"
-                  : score >= 60
-                    ? "D"
+                  : score >= 67
+                    ? "D+"
+                    : score >= 63 ? "D" : score >= 60 ? "D−"
                     : "F";
 }
 export function gpa(courses: Course[]) {
   const graded = courses.filter((c) => c.currentScore !== null);
   if (!graded.length) return null;
-  return (
-    graded.reduce(
-      (sum, c) =>
-        sum +
-        (c.currentScore! >= 90
-          ? 4
-          : c.currentScore! >= 80
-            ? 3
-            : c.currentScore! >= 70
-              ? 2
-              : c.currentScore! >= 60
-                ? 1
-                : 0),
-      0,
-    ) / graded.length
-  );
+  const points:Record<string,number>={'A':4,'A−':3.7,'B+':3.3,'B':3,'B−':2.7,'C+':2.3,'C':2,'C−':1.7,'D+':1.3,'D':1,'D−':.7,'F':0};
+  return graded.reduce((sum,c)=>sum+(points[letter(c.currentScore)]??0),0)/graded.length;
 }
 export function curve(
   raw: number,

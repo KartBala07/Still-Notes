@@ -22,6 +22,11 @@ export type Assignment = {
   description: string;
   done: boolean;
   minutes: number;
+  groupId?: string;
+  groupName?: string;
+  canvasId?: string;
+  excused?: boolean;
+  submissionTypes?: string[];
 };
 export type Announcement = {
   id: string;

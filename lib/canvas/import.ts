@@ -7,6 +7,14 @@ export function importSchool(input: unknown) {
     throw Error(
       "Choose a Canvas Pro coursework snapshot with courses and tasks.",
     );
+  const combined = [...root.tasks];
+  const seen = new Set(combined.map((t: any) => String(t.id)));
+  for (const todo of Array.isArray(root.todos) ? root.todos : []) {
+    if (!seen.has(String(todo.id))) {
+      combined.push(todo);
+      seen.add(String(todo.id));
+    }
+  }
   return schoolSchema.parse({
     courses: root.courses.map((c: any) => ({
       id: String(c.id),
@@ -17,7 +25,7 @@ export function importSchool(input: unknown) {
       targetGrade: c.targetGrade ?? 93,
       origin: c.origin || "canvas",
     })),
-    tasks: root.tasks.map((t: any) => ({
+    tasks: combined.map((t: any) => ({
       id: String(t.id),
       courseId: String(t.courseId),
       title: t.title,
@@ -32,6 +40,11 @@ export function importSchool(input: unknown) {
       description: t.description || "",
       done: !!t.done,
       minutes: t.minutes || 0,
+      groupId: t.groupId == null ? undefined : String(t.groupId),
+      groupName: t.groupName,
+      canvasId: t.canvasId == null ? undefined : String(t.canvasId),
+      excused: !!t.excused,
+      submissionTypes: t.submissionTypes,
     })),
     announcements: root.announcements || [],
     synced: root.synced || Date.now(),

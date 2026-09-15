@@ -105,7 +105,7 @@ test("coursework import removes credentials and refuses cross-course references 
 });
 test("grade estimates and point curves use explicit denominators", () => {
   assert.equal(gpa([]), null);
-  assert.equal(gpa(fixture().courses), 3);
+  assert.equal(gpa(fixture().courses), 2.7);
   assert.deepEqual(curve(38, 50, 5, 90), {
     rawPct: 76,
     curvedPct: 86,
@@ -137,4 +137,9 @@ test("video links allow only HTTPS YouTube identities and fixed embed origins", 
     "https://www.youtube-nocookie.com",
   );
   assert.throws(() => youtubeEmbed("../unsafe"));
+});
+
+test("Canvas Pro snapshot import includes unique To Do tasks and keeps authoritative assignment rows", () => {
+ const data=fixture(), next=importSchool({...data,todos:[{...data.tasks[0],title:'Duplicate todo'}, {...data.tasks[0],id:'todo-only',title:'Todo only'}]});
+ assert.equal(next.tasks.length,data.tasks.length+1);assert.equal(next.tasks[0].title,'Cell exam');assert.equal(next.tasks.at(-1)!.title,'Todo only');
 });

@@ -91,3 +91,16 @@ test('reset emails hide account existence, expire, reject replay and revoke sess
   expect((await call('auth/reset','POST',{token:expired,password:'replacement-pass-12345'})).status).toBe(400);
  }finally{vi.unstubAllGlobals();vi.unstubAllEnvs()}
 });
+
+import {schoolContract} from '../school-contract';
+test('Convex planning, documents and coursework AI enforce private ownership and explicit actions',async()=>{
+ const t=convexTest(schema,modules),call=api(t),a=(await call('auth/signup','POST',credentials('planner-a'))).body,b=(await call('auth/signup','POST',credentials('planner-b'))).body;
+ await schoolContract(call,a.token,b.token);
+});
+test('OpenRouter connection test reserves output space and reports the routed model',async()=>{
+ const t=convexTest(schema,modules),call=api(t),a=(await call('auth/signup','POST',credentials('router-test'))).body;
+ await call('settings','PUT',{provider:'openrouter',model:'openrouter/free',voiceId:'',theme:'dark',slang:false,brainrot:false,aiKey:'sk-or-test-only'},a.token);
+ let body:any;const original=globalThis.fetch;
+ vi.stubGlobal('fetch',async(url:any,init:any)=>{if(String(url).startsWith('https://openrouter.ai/')){body=JSON.parse(init.body);return Response.json({model:'fixture/free-model',choices:[{message:{content:'{"ok":true}'},finish_reason:'stop'}]})}return original(url,init)});
+ try {const r=await call('ai/test','POST',{},a.token);expect(r.status).toBe(200);expect(r.body.model).toBe('fixture/free-model');expect(body.max_tokens).toBeGreaterThanOrEqual(1024)} finally {vi.unstubAllGlobals()}
+});

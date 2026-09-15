@@ -2,21 +2,28 @@ import {localConfig,localGenerate} from './local-ai';
 import type {Note} from './types';
 export const API_BASE=typeof window!=='undefined'&&window.location.hostname==='kartbala07.github.io'?'https://still-notes.swathibala988.chatgpt.site':'';
 let authToken='';
+let authRevision=0;
 export function loadSession(){if(API_BASE)authToken=sessionStorage.getItem('still-session')||'';}
-export function setSession(value:string){authToken=value;if(API_BASE){if(value)sessionStorage.setItem('still-session',value);else sessionStorage.removeItem('still-session');}}
+export function setSession(value:string){authRevision++;authToken=value;if(API_BASE){if(value)sessionStorage.setItem('still-session',value);else sessionStorage.removeItem('still-session');}}
 export async function request(path:string,options:RequestInit={}){
+ const startedFor=authRevision;
  const headers=new Headers(options.headers);if(authToken)headers.set('Authorization','Bearer '+authToken);
  if(options.body&&!(options.body instanceof FormData))headers.set('Content-Type','application/json');
  const response=await fetch(API_BASE+'/api/'+path,{...options,headers,credentials:'include'});
+ if(startedFor!==authRevision)throw new Error('Your account changed. Run this action again.');
  if(!response.ok){const data=await response.json().catch(()=>({})) as {error?:string};throw new Error(data.error||'Request failed ('+response.status+').');}return response;
 }
 export async function api<T=any>(path:string,method='GET',body?:unknown):Promise<T>{
+ const startedFor=authRevision;
  let value=body;
- if(method==='POST'&&['organize','generate','chat'].includes(path)&&localConfig().mode!=='cloud'){
-  const prepared=await (await request('local/prepare',{method:'POST',body:JSON.stringify({...body as object,kind:path})})).json();
+ if(method==='POST'&&['organize','generate','chat','school-chat'].includes(path)&&localConfig().mode!=='cloud'){
+  const prepared=await (await request(path==='school-chat'?'school-chat/prepare':'local/prepare',{method:'POST',body:JSON.stringify({...body as object,kind:path})})).json();
   value={...body as object,localResult:await localGenerate(prepared)};
  }
- return (await request(path,{method,body:value===undefined?undefined:JSON.stringify(value)})).json();
+ if(startedFor!==authRevision)throw new Error('Your account changed. Run this action again.');
+ const data=await (await request(path,{method,body:value===undefined?undefined:JSON.stringify(value)})).json();
+ if(startedFor!==authRevision)throw new Error('Your account changed. Run this action again.');
+ return data as T;
 }
 export function download(name:string,body:Blob|string){const url=URL.createObjectURL(typeof body==='string'?new Blob([body],{type:'text/plain'}):body);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 export async function extract(file:File){
