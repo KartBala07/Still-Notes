@@ -19,10 +19,33 @@ export function LocalSettings() {
     setBusy(true);
     try {
       saveLocal(s);
-      const r = await companion(list ? "/models" : "/health", {}, s.pairing);
-      if (list) setModels(r.models);
+      const r = await companion(
+        list
+          ? s.mode === "opencode"
+            ? "/opencode/models"
+            : "/models"
+          : "/health",
+        {},
+        s.pairing,
+      );
+      if (list) {
+        const found =
+          s.mode === "opencode"
+            ? r.models.map((m: { id: string }) => m.id)
+            : r.models;
+        setModels(found);
+        if (!s.model && found[0]) {
+          const next = { ...s, model: found[0] };
+          setS(next);
+          saveLocal(next);
+        }
+      }
       setStatus(
-        list ? "Choose an installed model below." : "This computer is paired.",
+        list
+          ? "Choose one of the available models below."
+          : r.version >= 2
+            ? "Connector v2 paired. Now load models and test your chosen AI."
+            : "Your connector is outdated. Download the new connector, restart it, and pair again.",
       );
       toast.success(
         list ? "Installed models loaded" : "Local connector connected",
@@ -51,10 +74,7 @@ export function LocalSettings() {
             setS({
               ...s,
               mode: e.target.value as LocalConfig["mode"],
-              model:
-                e.target.value === "opencode"
-                  ? "ollama/gemma4:e2b"
-                  : "gemma4:e2b",
+              model: e.target.value === "opencode" ? "" : "gemma4:e2b",
             })
           }
         >
@@ -63,6 +83,25 @@ export function LocalSettings() {
           <option value="opencode">OpenCode · local connector</option>
         </select>
       </label>
+      {s.mode === "opencode" && (
+        <div className="local-guide">
+          <strong>OpenCode setup</strong>
+          <p>
+            Start OpenCode in a dedicated folder, disable automatic sharing, and
+            connect your preferred provider there. You can use Gemini, OpenAI,
+            OpenRouter, Copilot or a local Ollama provider that your OpenCode
+            installation supports.
+          </p>
+          <code>opencode serve --hostname 127.0.0.1 --port 4096</code>
+          <a
+            href="https://opencode.ai/docs/providers/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            OpenCode provider setup ↗
+          </a>
+        </div>
+      )}
       <div className="local-guide">
         <strong>Pair this computer</strong>
         <p>
@@ -131,13 +170,62 @@ export function LocalSettings() {
           <Link size={15} />
           Save & pair
         </button>
-        {s.mode === "ollama" && (
+        {s.mode !== "cloud" && (
           <button
             className="secondary"
             disabled={busy}
             onClick={() => run(true)}
           >
-            List installed models
+            {s.mode === "opencode"
+              ? "Load OpenCode models"
+              : "List installed models"}
+          </button>
+        )}
+        {s.mode !== "cloud" && (
+          <button
+            className="secondary"
+            disabled={busy || !s.model}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                saveLocal(s);
+                const r = await companion("/generate", {
+                  provider: s.mode,
+                  model: s.model,
+                  messages: [
+                    {
+                      role: "system",
+                      content: 'Return one JSON object only: {"ok":true}',
+                    },
+                    { role: "user", content: "Connection test" },
+                  ],
+                  schema: {
+                    type: "object",
+                    properties: { ok: { type: "boolean" } },
+                    required: ["ok"],
+                    additionalProperties: false,
+                  },
+                });
+                const value = JSON.parse(
+                  r.content
+                    .trim()
+                    .replace(/^```(?:json)?\s*/, "")
+                    .replace(/\s*```$/, ""),
+                );
+                if (value.ok !== true)
+                  throw Error(
+                    "The server connected but the model did not produce valid JSON. Choose another model.",
+                  );
+                setStatus("AI test passed · " + r.model);
+                toast.success("Local AI is responding");
+              } catch (e) {
+                setStatus((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Test {s.mode === "opencode" ? "OpenCode" : "Ollama"}
           </button>
         )}
         <button

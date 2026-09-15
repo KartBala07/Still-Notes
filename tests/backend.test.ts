@@ -70,3 +70,6 @@ test('local AI still enforces source ownership and citation checks; tone is opti
  const invalid=await call('chat','POST',{...request,localResult:{answer:'Invented',citations:[{noteId:note.id,quote:'A made-up fact.'}]}},a.token);assert.deepEqual(invalid.body.citations,[]);assert.match(invalid.body.answer,/could not find/);
  await call('tone','DELETE',undefined,a.token);assert.equal((await call('tone','GET',undefined,a.token)).body.samples,0);
 });
+
+import {schoolContract} from './school-contract';
+test('Worker planning, documents and coursework AI enforce private ownership and explicit actions',async()=>{await schoolContract(call,a.token,b.token)});

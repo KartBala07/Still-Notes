@@ -43,6 +43,11 @@ export const schoolSchema = z
           description: z.string().max(15000).default(""),
           done: z.boolean().default(false),
           minutes: z.number().min(0).max(600).default(0),
+          groupId: z.string().max(120).optional(),
+          groupName: z.string().max(250).optional(),
+          canvasId: z.string().regex(/^\d+$/).optional(),
+          excused: z.boolean().optional(),
+          submissionTypes: z.array(z.string().max(80)).max(15).optional(),
         }),
       )
       .max(1500),
