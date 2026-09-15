@@ -52,3 +52,7 @@ next-env.d.ts
 
 convex-web/
 lib/convex-web-assets.js
+
+__pycache__/
+*.pyc
+public/local-companion.py

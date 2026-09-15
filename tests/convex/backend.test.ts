@@ -58,6 +58,20 @@ test('static frontend has same-origin assets, working cache validation and no se
  expect((await t.fetch(src,{headers:{'If-None-Match':js.headers.get('etag')!}})).status).toBe(304);
  expect((await t.fetch('/.env')).status).toBe(404);expect((await t.fetch('/convex/database.ts')).status).toBe(404);
  expect((await t.fetch('/api/state',{headers:{Origin:'https://untrusted.example'}})).status).toBe(403);
+ expect(r.headers.get('content-security-policy')).toContain('https://www.youtube-nocookie.com');
+ expect((await t.fetch('/local-companion.py')).status).toBe(200);
+});
+test('native Convex isolates coursework and local-model source preparation',async()=>{
+ const t=convexTest(schema,modules),call=api(t),a=(await call('auth/signup','POST',credentials('canvas-a'))).body,b=(await call('auth/signup','POST',credentials('canvas-b'))).body;
+ const snapshot={courses:[{id:'course-a',name:'Private math'}],tasks:[],announcements:[],canvasToken:'discard-me'};
+ expect((await call('school','PUT',snapshot,a.token)).status).toBe(200);
+ expect((await call('school','GET',undefined,b.token)).body.courses).toHaveLength(0);
+ expect(JSON.stringify((await call('school','GET',undefined,a.token)).body)).not.toContain('discard-me');
+ const note=(await call('notes','POST',{title:'Triangles',subject:'Math',text:'A triangle has three sides.'},a.token)).body;
+ expect((await call('local/prepare','POST',{kind:'organize',id:note.id},b.token)).status).toBe(404);
+ expect((await call('local/prepare','POST',{kind:'organize',id:note.id},a.token)).status).toBe(200);
+ expect((await call('organize','POST',{id:note.id,localResult:{summary:'Three sides.'}},a.token)).body.summary).toBe('Three sides.');
+ expect((await call('organize','POST',{id:note.id,localResult:{summary:'Stolen.'}},b.token)).status).toBe(404);
 });
 test('reset emails hide account existence, expire, reject replay and revoke sessions',async()=>{
  vi.stubEnv('RESEND_API_KEY','test-email-key');vi.stubEnv('AUTH_EMAIL_FROM','Still Notes <reset@example.test>');vi.stubEnv('PUBLIC_APP_URL','https://still.example.test');

@@ -45,3 +45,28 @@ test('study grading and spaced review use owned server state',async()=>{
 });
 
 test('configured owner initializes once without overwriting account changes',async()=>{const login=await call('auth/login','POST',{email:'owner@example.test',password:'owner-test-password'});assert.equal(login.status,200);assert.equal(login.body.user.settings.hasAiKey,true);assert.equal(login.body.user.id,'owner-test');await call('state','GET',undefined,login.body.token);const row=await db.prepare('SELECT count(*) AS n FROM users WHERE email=?').bind('owner@example.test').first<{n:number}>();assert.equal(row!.n,1);});
+
+test('coursework is private and strips imported credential fields',async()=>{
+ const snapshot={courses:[{id:'c',name:'Private course',token:'must-be-stripped'}],tasks:[],announcements:[],canvasToken:'never-store-me'};
+ assert.equal((await call('school','PUT',snapshot,a.token)).status,200);
+ const own=await call('school','GET',undefined,a.token);assert.equal(own.body.courses.length,1);assert.ok(!JSON.stringify(own.body).includes('token'));
+ assert.deepEqual((await call('school','GET',undefined,b.token)).body.courses,[]);
+ await call('school','DELETE',undefined,b.token);assert.equal((await call('school','GET',undefined,a.token)).body.courses.length,1);
+ const stored=await db.prepare("SELECT data FROM items WHERE user=? AND kind='school'").bind(a.user.id).first<{data:string}>();assert.ok(!stored!.data.includes('never-store-me'));assert.ok(!stored!.data.includes('must-be-stripped'));
+});
+test('local AI still enforces source ownership and citation checks; tone is optional and private',async()=>{
+ const note=(await call('notes','POST',{title:'Local biology',subject:'Biology',text:'Mitochondria perform cellular respiration.'},a.token)).body;
+ assert.equal((await call('local/prepare','POST',{kind:'chat',noteIds:[note.id],question:'What happens?'},b.token)).status,404);
+ assert.equal((await call('organize','POST',{id:note.id,localResult:{summary:'Unauthorized'}},b.token)).status,404);
+ const prepared=await call('local/prepare','POST',{kind:'chat',noteIds:[note.id],question:'What happens?'},a.token);assert.equal(prepared.status,200);assert.match(prepared.body.messages[0].content,/Do not search the web/);assert.ok(!JSON.stringify(prepared.body).includes('private-test-key'));
+ assert.equal((await call('organize','POST',{id:note.id,localResult:{summary:'## Respiration\nMitochondria perform cellular respiration.'}},a.token)).status,200);
+ const request={noteIds:[note.id],question:'ngl can u explain respiration',localResult:{answer:'Mitochondria carry it out.',citations:[{noteId:note.id,quote:'Mitochondria perform cellular respiration.'}]}};
+ const off=await call('chat','POST',request,a.token);assert.equal(off.status,200);assert.equal((await call('tone','GET',undefined,a.token)).body.samples,0);
+ const user=(await call('auth/me','GET',undefined,a.token)).body.user;
+ await call('settings','PUT',{...user.settings,slang:true},a.token);
+ const chat=await call('chat','POST',request,a.token);assert.equal(chat.body.citations.length,1);
+ const tone=(await call('tone','GET',undefined,a.token)).body;assert.equal(tone.samples,1);assert.ok(tone.phrases.includes('ngl'));assert.ok(!JSON.stringify(tone).includes('respiration'));
+ assert.equal((await call('tone','GET',undefined,b.token)).body.samples,0);
+ const invalid=await call('chat','POST',{...request,localResult:{answer:'Invented',citations:[{noteId:note.id,quote:'A made-up fact.'}]}},a.token);assert.deepEqual(invalid.body.citations,[]);assert.match(invalid.body.answer,/could not find/);
+ await call('tone','DELETE',undefined,a.token);assert.equal((await call('tone','GET',undefined,a.token)).body.samples,0);
+});

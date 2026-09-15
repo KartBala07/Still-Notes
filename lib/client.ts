@@ -1,3 +1,4 @@
+import {localConfig,localGenerate} from './local-ai';
 import type {Note} from './types';
 export const API_BASE=typeof window!=='undefined'&&window.location.hostname==='kartbala07.github.io'?'https://still-notes.swathibala988.chatgpt.site':'';
 let authToken='';
@@ -9,7 +10,14 @@ export async function request(path:string,options:RequestInit={}){
  const response=await fetch(API_BASE+'/api/'+path,{...options,headers,credentials:'include'});
  if(!response.ok){const data=await response.json().catch(()=>({})) as {error?:string};throw new Error(data.error||'Request failed ('+response.status+').');}return response;
 }
-export const api=async<T=any>(path:string,method='GET',body?:unknown):Promise<T>=>(await request(path,{method,body:body===undefined?undefined:JSON.stringify(body)})).json();
+export async function api<T=any>(path:string,method='GET',body?:unknown):Promise<T>{
+ let value=body;
+ if(method==='POST'&&['organize','generate','chat'].includes(path)&&localConfig().mode!=='cloud'){
+  const prepared=await (await request('local/prepare',{method:'POST',body:JSON.stringify({...body as object,kind:path})})).json();
+  value={...body as object,localResult:await localGenerate(prepared)};
+ }
+ return (await request(path,{method,body:value===undefined?undefined:JSON.stringify(value)})).json();
+}
 export function download(name:string,body:Blob|string){const url=URL.createObjectURL(typeof body==='string'?new Blob([body],{type:'text/plain'}):body);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 export async function extract(file:File){
  if(file.size>20000000)throw new Error('Please upload a file below 20 MB.');
