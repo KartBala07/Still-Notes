@@ -14,7 +14,10 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 - AI-organized notes, flashcards, quizzes, timed AP-style multiple-choice practice and detailed rationales for every option.
 - Match and Crash study games, spaced flashcard review, mistake notebook, focus timer and study calendar.
 - Chat grounded in selected lessons, with verified exact source quotations and no web tools.
-- Optional Gen Z explanations and original runner, block parkour and driving animations. These are not the commercial Subway Surfers, Minecraft or GTA games.
+- Integrated Canvas Pro course dashboard, assignment priorities, grades, weekly study plan, announcements and curve calculator. Course data syncs privately; Canvas access tokens stay in the optional local connector.
+- Ollama and OpenCode options for local study generation, with explicit model selection and a paired loopback connector. Cloud providers remain available on other devices.
+- Opt-in Gen Z mode adapts explanation length, familiar wording and emoji use from simple per-user statistics; reset the learned style in Settings.
+- An optional YouTube video corner accepts your own runner, parkour or driving video links. Nothing embeds until you load a video; minimize stops playback.
 - JSON account export and Markdown lesson export.
 
 ## Convex migration
@@ -31,7 +34,11 @@ The owner account and encrypted provider credentials are configured in private r
 
 GitHub Pages is enabled using GitHub Actions. The frontend connects to the cloud backend through an explicit CORS allowlist for `https://kartbala07.github.io`. Public account sign-up was approved by the owner; study content is not made public.
 
-The hosted frontend uses an HttpOnly Secure SameSite=Lax session cookie. The cross-origin GitHub Pages frontend uses a bearer session kept in tab-scoped sessionStorage so it works when browsers block third-party cookies. No product data or API keys are stored in browser storage.
+The hosted frontend uses an HttpOnly Secure SameSite=Lax session cookie. The cross-origin GitHub Pages frontend uses a bearer session kept in tab-scoped sessionStorage so it works when browsers block third-party cookies. Provider API keys and study content are not persisted in browser storage. Local model preferences are stored per account on each device; the connector pairing code lasts only for that tab.
+
+## Canvas Pro integration and local AI
+
+See [Canvas merge, attribution and local setup](docs/CANVAS-MERGE.md). This is a feature integration into one authenticated workspace. The collaborating fork and its upstream remain unchanged.
 
 ## Development
 
@@ -41,6 +48,7 @@ Use Node 22 or newer.
 npm ci
 npm run typecheck
 npm test
+python3 -m unittest discover -s tests -p '*_test.py'
 npm run build:pages
 npm run dev
 ```
@@ -53,7 +61,7 @@ Required runtime binding names: `DB` (D1), `BUCKET` (R2). Required secret: `APP_
 
 - 20 MB per uploaded file; 90,000 source characters per lesson or selected generation request; up to 20 generated cards/questions at a time.
 - A recording is initially held in the open browser tab. Download and transcribe each clip, then save its lesson before closing the tab. Long recordings are split into independent clips.
-- API calls require valid provider credentials and credits. Read-aloud also requires a Fish Audio voice ID. Speech transcription does not require a voice ID.
+- Cloud AI calls require valid provider credentials and available quota. Ollama uses an installed local model without a cloud AI key. Read-aloud and transcription still use Fish Audio; read-aloud also requires a Fish Audio voice ID.
 - AI output can be wrong. Quotes are checked against the source, but this cannot prove every inference. Review generated material. AP-style questions are independent practice, not official College Board questions or a guaranteed AP syllabus assessment.
 - Public Google export and YouTube caption access can fail because of source permissions or provider restrictions; file upload / transcript paste remains available.
 - Calendar sessions are in-app plans; external calendar sync, email reminders and email verification are not configured. Password-reset delivery requires the email configuration below.
@@ -61,7 +69,7 @@ Required runtime binding names: `DB` (D1), `BUCKET` (R2). Required secret: `APP_
 
 ## Verification
 
-Tests cover authentication, logout, origin restrictions, private note isolation, encryption, hidden keys, server-side grading and spaced-review ownership. Frontend and Worker builds are checked separately. Physical-device microphone behavior still depends on browser permissions and hardware.
+Tests cover authentication, logout, origin restrictions, private note and coursework isolation, encryption, hidden keys, server-side grading, spaced-review ownership, local-generation authorization, citation rejection, style reset, schedule capacity and local connector permissions. Frontend and Worker builds are checked separately. Real Ollama/OpenCode models and physical-device microphone behavior still need checking on the user's hardware.
 
 ## Password reset and AI configuration
 

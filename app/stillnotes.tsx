@@ -1,5 +1,8 @@
 "use client";
 import Auth from "./auth";
+import School from "./school";
+import { LocalSettings, ToneSettings } from "./local-settings";
+import { setLocalOwner, forgetLocal } from "../lib/local-ai";
 import Dashboard, { usePageMotion } from "./dashboard";
 import { providers } from "../lib/ai-providers";
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -218,6 +221,7 @@ export default function StillNotes() {
     loadSession();
     api<{ user: User }>("auth/me")
       .then(async (r) => {
+        setLocalOwner(r.user.id);
         setUser(r.user);
         await refresh();
       })
@@ -300,6 +304,7 @@ export default function StillNotes() {
   async function logout() {
     await api("auth/logout", "POST");
     setSession("");
+    forgetLocal();
     setUser(null);
     setData(initial);
     setSelected(null);
@@ -321,6 +326,7 @@ export default function StillNotes() {
           resetToken={resetToken}
           onLogin={async (u, t) => {
             setSession(t);
+            setLocalOwner(u.id);
             setResetToken("");
             setUser(u);
             await refresh();
@@ -355,6 +361,7 @@ export default function StillNotes() {
           <SidebarMenu>
             {[
               ["home", "Overview", Sparkles],
+              ["school", "Classes & assignments", GraduationCap],
               ["notes", "Your lessons", BookOpen],
               ["study", "Study studio", Layers],
               ["calendar", "Calendar", CalendarDays],
@@ -436,15 +443,19 @@ export default function StillNotes() {
             <span className="muted">Workspace</span>
             <span className="muted">/</span>
             <strong>
-              {page === "notes"
-                ? "Your lessons"
-                : page === "study"
-                  ? "Study studio"
-                  : page === "chat"
-                    ? "Ask your notes"
-                    : page === "calendar"
-                      ? "Calendar"
-                      : "Settings"}
+              {page === "home"
+                ? "Overview"
+                : page === "school"
+                  ? "Classes & assignments"
+                  : page === "notes"
+                    ? "Your lessons"
+                    : page === "study"
+                      ? "Study studio"
+                      : page === "chat"
+                        ? "Ask your notes"
+                        : page === "calendar"
+                          ? "Calendar"
+                          : "Settings"}
             </strong>
           </div>
           <div className="inline">
@@ -471,6 +482,19 @@ export default function StillNotes() {
             </button>
           </div>
         </header>
+        {page === "school" && (
+          <School
+            onLesson={async (id) => {
+              await refresh();
+              setSelected(id);
+              setPage("notes");
+            }}
+            onCalendar={async () => {
+              await refresh();
+              setPage("calendar");
+            }}
+          />
+        )}
         {page === "home" && (
           <Dashboard
             user={user}
@@ -982,6 +1006,7 @@ export default function StillNotes() {
             onSave={setUser}
             onLogout={() => {
               setSession("");
+              forgetLocal();
               setUser(null);
               setData(initial);
             }}
@@ -1074,7 +1099,7 @@ export default function StillNotes() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {user.settings.brainrot && <Brainrot />}
+      {user.settings.brainrot && <Brainrot user={user} onSave={setUser} />}
       <Toaster position="bottom-right" richColors />
     </SidebarProvider>
   );
@@ -1577,6 +1602,7 @@ function SettingsView({
           <p>A workspace that feels like you.</p>
         </div>
       </section>
+      <LocalSettings />
       <form
         className="glass settings-panel"
         onSubmit={async (e) => {
@@ -1766,8 +1792,8 @@ function SettingsView({
           <div>
             <strong>Gen Z mode</strong>
             <p>
-              A little slang in AI explanations. Same concepts, lighter
-              delivery.
+              Adapts to your message length and familiar wording as you chat.
+              You can reset the learned style below.
             </p>
           </div>
           <Switch
@@ -1779,8 +1805,8 @@ function SettingsView({
           <div>
             <strong>Brainrot corner</strong>
             <p>
-              An optional original runner, parkour or driving animation beside
-              your study space.
+              An optional YouTube video corner. Choose your own parkour, runner
+              or driving video.
             </p>
           </div>
           <Switch
@@ -1799,6 +1825,7 @@ function SettingsView({
           )}
         </button>
       </form>
+      <ToneSettings enabled={s.slang} />
       <section className="glass settings-panel">
         <h2>
           <Cloud size={20} />

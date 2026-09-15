@@ -11,6 +11,8 @@ on:
       - 'web/**'
       - 'public/**'
       - 'scripts/package-convex-web.mjs'
+      - 'scripts/local-companion.py'
+      - 'scripts/prepare-public.mjs'
       - 'vite.convex.config.ts'
       - 'package*.json'
       - '.github/workflows/convex.yml'
@@ -33,6 +35,7 @@ jobs:
       - run: npm run build:convex
       - run: npm run typecheck
       - run: npm test
+      - run: python3 -m unittest discover -s tests -p '*_test.py'
       - run: npm run test:convex
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

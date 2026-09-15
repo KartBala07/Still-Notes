@@ -115,6 +115,19 @@ export default function Dashboard({
           })}
         </div>
       </section>
+      <button
+        className="school-banner glass reveal"
+        onClick={() => onNavigate("school")}
+      >
+        <span>
+          <BookOpen size={20} />
+          <strong>Your classes. Your notes. Connected.</strong>
+        </span>
+        <span>
+          Open Canvas workspace
+          <ArrowUpRight size={17} />
+        </span>
+      </button>
       <section className="quick-actions reveal" aria-label="Start learning">
         <button
           className="quick-card lime-card"

@@ -18,7 +18,11 @@
     "build:convex": "vite build --config vite.convex.config.ts && node scripts/package-convex-web.mjs",
     "dev:convex": "npm run build:convex && convex dev",
     "deploy:convex": "npm run build:convex && convex deploy",
-    "test:convex": "vitest run --config vitest.convex.config.ts"
+    "test:convex": "vitest run --config vitest.convex.config.ts",
+    "prebuild": "node scripts/prepare-public.mjs",
+    "prebuild:pages": "node scripts/prepare-public.mjs",
+    "prebuild:convex": "node scripts/prepare-public.mjs",
+    "companion": "python3 scripts/local-companion.py"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
