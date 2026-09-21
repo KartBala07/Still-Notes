@@ -47,6 +47,7 @@ export function createHandler(runtime: BackendRuntime) {
     slang: false,
     brainrot: false,
     theme: "system",
+    accent: "sage",
   };
   const text = z.string().trim().min(1).max(90000);
   const settingsSchema = z.object({
@@ -61,6 +62,8 @@ export function createHandler(runtime: BackendRuntime) {
       .refine((s) => !s || !!youtubeId(s))
       .optional(),
     theme: z.enum(["light", "dark", "system"]),
+    accent: z.enum(["sage", "rose", "ember", "ocean", "mono"]).optional(),
+    onboarded: z.boolean().optional(),
     aiKey: z.string().max(300).optional(),
     fishKey: z.string().max(300).optional(),
     clearAi: z.boolean().optional(),
@@ -140,8 +143,59 @@ export function createHandler(runtime: BackendRuntime) {
       await hash(sessionToken(req)),
       Date.now(),
     );
-    return u || fail(401, "Please sign in to continue.");
+    if (!u) fail(401, "Please sign in to continue.");
+    if (u.suspended) fail(403, "This account has been suspended. Please contact the owner.");
+    return u;
   }
+  function safeEqual(a: string, b: string) {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+  }
+  function base64url(bytes: Uint8Array) {
+    let out = "";
+    for (const byte of bytes) out += String.fromCharCode(byte);
+    return btoa(out).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  // The developer console uses a short-lived stateless token signed with the
+  // server encryption key, so no extra table or cookie is required.
+  async function adminSign(payload: string) {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(runtime.encryptionKey),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const signature = new Uint8Array(
+      await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)),
+    );
+    return base64url(signature);
+  }
+  function adminConfigured() {
+    if (!runtime.admin?.email || !runtime.admin?.password)
+      fail(503, "Developer access is not configured on this server.");
+    return runtime.admin;
+  }
+  async function adminToken() {
+    const payload = "dev." + (Date.now() + 12 * 3600000);
+    return payload + "." + (await adminSign(payload));
+  }
+  async function adminSession(req: Request) {
+    const cfg = adminConfigured();
+    const raw = req.headers.get("Authorization")?.replace(/^Bearer /, "") || "";
+    const [tag, exp, signature] = raw.split(".");
+    if (tag !== "dev" || !exp || !signature)
+      fail(401, "Developer sign-in required.");
+    if (Number(exp) < Date.now())
+      fail(401, "Developer session expired. Sign in again.");
+    if (!safeEqual(await adminSign("dev." + exp), signature))
+      fail(401, "Developer sign-in required.");
+    return cfg;
+  }
+  const adminAvailable = () =>
+    !!(store.listAccounts && store.adminStats && store.adminSetPassword && store.adminSetSuspended && store.adminDeleteAccount);
   async function json(req: Request) {
     if (Number(req.headers.get("content-length")) > 1100000)
       fail(413, "This request is too large.");
@@ -405,6 +459,8 @@ export function createHandler(runtime: BackendRuntime) {
       if (path[1] === "login") {
         if (!u || !(await passwordMatches(body.password, u.password)))
           fail(401, "Email or password is incorrect.");
+        if (u.suspended)
+          fail(403, "This account has been suspended. Please contact the owner.");
       } else {
         if (u)
           fail(
@@ -450,6 +506,119 @@ export function createHandler(runtime: BackendRuntime) {
           },
         },
       );
+    }
+    if (path[0] === "admin") {
+      if (path[1] === "login" && method === "POST") {
+        const cfg = adminConfigured();
+        const ip = runtime.trustedClientIp?.(req);
+        if (ip) await rate("admin:" + ip, 20, 600);
+        else await rate("admin-global", 100, 60);
+        const b = z
+          .object({
+            email: z.string().email().max(254),
+            password: z.string().min(8).max(200),
+          })
+          .parse(await json(req));
+        if (
+          !safeEqual(b.email.toLowerCase(), cfg.email.toLowerCase()) ||
+          !safeEqual(b.password, cfg.password)
+        )
+          fail(401, "Developer credentials are incorrect.");
+        return { email: cfg.email, token: await adminToken() };
+      }
+      await adminSession(req);
+      if (!adminAvailable())
+        fail(501, "Administration is not available on this backend.");
+      if (path[1] === "session") return { email: runtime.admin!.email };
+      if (path[1] === "logout" && method === "POST") return { ok: true };
+      if (path[1] === "accounts" && method === "GET") {
+        const [accounts, stats] = await Promise.all([
+          store.listAccounts!(),
+          store.adminStats!(),
+        ]);
+        return {
+          accounts: accounts.map((a) => {
+            const s = { ...defaults, ...JSON.parse(a.settings || "{}") };
+            const stat = stats[a.id] || {
+              notes: 0,
+              decks: 0,
+              attempts: 0,
+              events: 0,
+              assets: 0,
+              bytes: 0,
+            };
+            return {
+              id: a.id,
+              email: a.email,
+              name: a.name,
+              created: a.created,
+              suspended: !!a.suspended,
+              provider: s.provider,
+              model: s.model,
+              theme: s.theme,
+              accent: s.accent,
+              ...stat,
+            };
+          }),
+        };
+      }
+      if (path[1] === "content" && method === "GET") {
+        const id = new URL(req.url).searchParams.get("id") || "";
+        const target = await store.accountById(id);
+        if (!target) fail(404, "Account not found.");
+        const items = await store.listItems(id);
+        const notes = items
+          .filter((i) => i.kind === "notes")
+          .map((i) => {
+            const n = JSON.parse(i.data) as Note;
+            return {
+              id: n.id,
+              title: n.title,
+              subject: n.subject,
+              created: n.created,
+              text: (n.text || "").slice(0, 20000),
+            };
+          });
+        const decks = items
+          .filter((i) => i.kind === "decks")
+          .map((i) => {
+            const d = JSON.parse(i.data) as Deck;
+            return {
+              id: d.id,
+              title: d.title,
+              created: d.created,
+              cards: (d.cards || []).length,
+            };
+          });
+        return { email: target.email, name: target.name, notes, decks };
+      }
+      if (path[1] === "password" && method === "POST") {
+        const b = z
+          .object({
+            id: z.string().min(1).max(80),
+            password: z.string().min(10).max(128),
+          })
+          .parse(await json(req));
+        if (!(await store.accountById(b.id))) fail(404, "Account not found.");
+        await store.adminSetPassword!(b.id, await passwordHash(b.password));
+        return { ok: true };
+      }
+      if (path[1] === "suspend" && method === "POST") {
+        const b = z
+          .object({ id: z.string().min(1).max(80), suspended: z.boolean() })
+          .parse(await json(req));
+        if (!(await store.accountById(b.id))) fail(404, "Account not found.");
+        await store.adminSetSuspended!(b.id, b.suspended);
+        return { ok: true };
+      }
+      if (path[1] === "delete" && method === "POST") {
+        const b = z
+          .object({ id: z.string().min(1).max(80) })
+          .parse(await json(req));
+        await store.adminDeleteAccount!(b.id);
+        return { ok: true };
+      }
+      fail(404, "Unknown developer action.");
     }
     const u = await account(req);
     if (path[0] === "auth") {

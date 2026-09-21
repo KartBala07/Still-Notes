@@ -1,11 +1,27 @@
 import {localConfig,localGenerate} from './local-ai';
+import {demoActive,demoData,demoUser,DEMO_NOTICE} from './demo';
 import type {Note} from './types';
 export const API_BASE=typeof window!=='undefined'&&window.location.hostname==='kartbala07.github.io'?'https://still-notes.swathibala988.chatgpt.site':'';
 let authToken='';
 let authRevision=0;
 export function loadSession(){if(API_BASE)authToken=sessionStorage.getItem('still-session')||'';}
 export function setSession(value:string){authRevision++;authToken=value;if(API_BASE){if(value)sessionStorage.setItem('still-session',value);else sessionStorage.removeItem('still-session');}}
+function jsonResponse(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});}
+function demoResponse(path:string,options:RequestInit){
+ const method=(options.method||'GET').toUpperCase();
+ if(path==='auth/me')return jsonResponse({user:demoUser});
+ if(path==='state')return jsonResponse(demoData);
+ if(path==='tone')return jsonResponse({samples:0,words:0,casual:0,emoji:0,phrases:[]});
+ if(path==='settings'&&method==='PUT'){
+  let body:Record<string,unknown>={};try{body=JSON.parse(String(options.body||'{}'));}catch{body={};}
+  const{aiKey,fishKey,clearAi,clearFish,...rest}=body;void aiKey;void fishKey;void clearAi;void clearFish;
+  return jsonResponse({user:{...demoUser,settings:{...demoUser.settings,...rest}}});
+ }
+ if(path==='auth/logout')return jsonResponse({ok:true});
+ return jsonResponse({error:DEMO_NOTICE},403);
+}
 export async function request(path:string,options:RequestInit={}){
+ if(demoActive())return demoResponse(path,options);
  const startedFor=authRevision;
  const headers=new Headers(options.headers);if(authToken)headers.set('Authorization','Bearer '+authToken);
  if(options.body&&!(options.body instanceof FormData))headers.set('Content-Type','application/json');
@@ -16,7 +32,7 @@ export async function request(path:string,options:RequestInit={}){
 export async function api<T=any>(path:string,method='GET',body?:unknown):Promise<T>{
  const startedFor=authRevision;
  let value=body;
- if(method==='POST'&&['organize','generate','chat','school-chat'].includes(path)&&localConfig().mode!=='cloud'){
+ if(method==='POST'&&['organize','generate','chat','school-chat'].includes(path)&&!demoActive()&&localConfig().mode!=='cloud'){
   const prepared=await (await request(path==='school-chat'?'school-chat/prepare':'local/prepare',{method:'POST',body:JSON.stringify({...body as object,kind:path})})).json();
   value={...body as object,localResult:await localGenerate(prepared)};
  }

@@ -12,6 +12,9 @@ import {
   MessageCircle,
 } from "lucide-react";
 import type { Data, User } from "../lib/types";
+import CountUp from "../components/react-bits/CountUp";
+import ShinyText from "../components/react-bits/ShinyText";
+import SpotlightCard from "../components/react-bits/SpotlightCard";
 const thoughts = [
   "You don’t have to understand everything today. Just one thing more than yesterday.",
   "A good question is the beginning of a better understanding.",
@@ -204,8 +207,10 @@ export default function Dashboard({
             </div>
           </div>
         </article>
-        <aside className="progress-panel glass reveal">
-          <span className="eyebrow">LOOK HOW FAR YOU’VE COME</span>
+        <SpotlightCard as="aside" className="progress-panel glass reveal">
+          <span className="eyebrow">
+            <ShinyText text="LOOK HOW FAR YOU’VE COME" />
+          </span>
           <h2>Your learning, at a glance.</h2>
           <button onClick={() => onNavigate("notes")}>
             <span>
@@ -213,7 +218,7 @@ export default function Dashboard({
               Lessons collected
             </span>
             <strong>
-              {data.notes.length}
+              <CountUp to={data.notes.length} />
               <ArrowUpRight size={16} />
             </strong>
           </button>
@@ -223,7 +228,7 @@ export default function Dashboard({
               Cards ready to revisit
             </span>
             <strong>
-              {due}
+              <CountUp to={due} />
               <ArrowUpRight size={16} />
             </strong>
           </button>
@@ -233,14 +238,14 @@ export default function Dashboard({
               Practice sessions
             </span>
             <strong>
-              {data.attempts.length}
+              <CountUp to={data.attempts.length} />
               <ArrowUpRight size={16} />
             </strong>
           </button>
-        </aside>
+        </SpotlightCard>
       </section>
       <section className="dashboard-bottom">
-        <article className="glass reveal">
+        <SpotlightCard as="article" className="glass reveal">
           <div className="section-title">
             <h2>A question on your mind?</h2>
             <MessageCircle size={21} />
@@ -258,8 +263,8 @@ export default function Dashboard({
               </button>
             ))}
           </div>
-        </article>
-        <article className="glass reveal">
+        </SpotlightCard>
+        <SpotlightCard as="article" className="glass reveal">
           <div className="section-title">
             <h2>A little time to learn.</h2>
             <button
@@ -298,7 +303,7 @@ export default function Dashboard({
               </button>
             </>
           )}
-        </article>
+        </SpotlightCard>
       </section>
     </div>
   );

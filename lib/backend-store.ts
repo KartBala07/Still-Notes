@@ -6,6 +6,17 @@ export type Account = {
   settings: string;
   keys: string;
   created: number;
+  suspended?: number;
+};
+
+/** Aggregate per-account usage shown in the developer console. Never includes secrets. */
+export type AdminStat = {
+  notes: number;
+  decks: number;
+  attempts: number;
+  events: number;
+  assets: number;
+  bytes: number;
 };
 export type StoredItem = {
   id: string;
@@ -56,6 +67,16 @@ export interface BackendStore {
     expires: number,
   ): Promise<void | null>;
   consumeReset(hash: string, password: string, now: number): Promise<boolean>;
+  /**
+   * Developer console hooks. Optional so a backend that does not support
+   * administration simply reports it as unavailable. Admin code must never
+   * return `password` or `keys` to the client.
+   */
+  listAccounts?(): Promise<Account[]>;
+  adminStats?(): Promise<Record<string, AdminStat>>;
+  adminSetPassword?(user: string, password: string): Promise<void | null>;
+  adminSetSuspended?(user: string, suspended: boolean): Promise<void | null>;
+  adminDeleteAccount?(user: string): Promise<void | null>;
 }
 export interface BlobStore {
   put(key: string, blob: Blob): Promise<void | null>;
@@ -67,6 +88,8 @@ export type BackendRuntime = {
   blobs: BlobStore;
   encryptionKey: string;
   ownerBootstrap?: string;
+  /** Separate developer console credentials. Absent means it is disabled. */
+  admin?: { email: string; password: string };
   email?: { apiKey: string; from: string; appUrl: string };
   /** Cloudflare supplies a trusted IP header; Convex uses per-account limits. */
   trustedClientIp?: (request: Request) => string | null;

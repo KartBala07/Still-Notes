@@ -1,4 +1,4 @@
-import type { Account, BackendStore, StoredItem, Asset } from "./backend-store";
+import type { Account, AdminStat, BackendStore, StoredItem, Asset } from "./backend-store";
 
 /** Existing cloud backend remains compatible while the Convex deployment is prepared. */
 export function d1Store(db: D1Database): BackendStore {
@@ -138,5 +138,69 @@ export function d1Store(db: D1Database): BackendStore {
       ]);
       return result[0].meta.changes === 1;
     },
+    // Developer console. Passwords and keys are never selected here.
+    listAccounts: async () =>
+      (
+        await db
+          .prepare(
+            "SELECT id,email,name,settings,created,suspended FROM users ORDER BY created DESC",
+          )
+          .all<Account>()
+      ).results,
+    adminStats: async () => {
+      const stats: Record<string, AdminStat> = {};
+      const ensure = (user: string) =>
+        (stats[user] ||= {
+          notes: 0,
+          decks: 0,
+          attempts: 0,
+          events: 0,
+          assets: 0,
+          bytes: 0,
+        });
+      const items = (
+        await db
+          .prepare("SELECT user,kind,COUNT(*) AS c FROM items GROUP BY user,kind")
+          .all<{ user: string; kind: string; c: number }>()
+      ).results;
+      for (const row of items) {
+        const stat = ensure(row.user);
+        if (row.kind === "notes") stat.notes = row.c;
+        else if (row.kind === "decks") stat.decks = row.c;
+        else if (row.kind === "attempts") stat.attempts = row.c;
+        else if (row.kind === "events") stat.events = row.c;
+      }
+      const assets = (
+        await db
+          .prepare(
+            "SELECT user,COUNT(*) AS c,COALESCE(SUM(size),0) AS bytes FROM assets GROUP BY user",
+          )
+          .all<{ user: string; c: number; bytes: number }>()
+      ).results;
+      for (const row of assets) {
+        const stat = ensure(row.user);
+        stat.assets = row.c;
+        stat.bytes = row.bytes;
+      }
+      return stats;
+    },
+    adminSetPassword: async (user, password) => {
+      await db.batch([
+        db.prepare("UPDATE users SET password=? WHERE id=?").bind(password, user),
+        db.prepare("DELETE FROM sessions WHERE user=?").bind(user),
+        db.prepare("UPDATE password_resets SET used=1 WHERE user=?").bind(user),
+      ]);
+    },
+    adminSetSuspended: async (user, suspended) => {
+      const statements = [
+        db
+          .prepare("UPDATE users SET suspended=? WHERE id=?")
+          .bind(suspended ? 1 : 0, user),
+      ];
+      if (suspended)
+        statements.push(db.prepare("DELETE FROM sessions WHERE user=?").bind(user));
+      await db.batch(statements);
+    },
+    adminDeleteAccount: (user) => run("DELETE FROM users WHERE id=?", user),
   };
 }

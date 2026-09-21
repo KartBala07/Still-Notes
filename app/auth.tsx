@@ -13,7 +13,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import { api, setSession } from "../lib/client";
+import { setDemo } from "../lib/demo";
 import type { User } from "../lib/types";
+import BlurText from "../components/react-bits/BlurText";
+import GradientText from "../components/react-bits/GradientText";
+import StarBorder from "../components/react-bits/StarBorder";
 export default function Auth({
   onLogin,
   resetToken = "",
@@ -86,9 +90,19 @@ export default function Auth({
           <Sparkles size={14} />A LITTLE CURIOSITY GOES A LONG WAY
         </span>
         <h1>
-          Big ideas.
-          <br />
-          <span>Clearer thinking.</span>
+          <BlurText
+            text="Big ideas."
+            animateBy="words"
+            direction="top"
+            className="auth-hero-line"
+          />
+          <GradientText
+            className="auth-hero-line auth-hero-accent"
+            colors={["#bf6047", "#e0a37f", "#7f9c86", "#bf6047"]}
+            animationSpeed={6}
+          >
+            Clearer thinking.
+          </GradientText>
         </h1>
         <p>
           Your lectures, notes, and next breakthrough.
@@ -219,7 +233,13 @@ export default function Auth({
             {message}
           </p>
         )}
-        <button className="primary" disabled={busy}>
+        <StarBorder
+          as="button"
+          type="submit"
+          disabled={busy}
+          className="auth-submit"
+          color="var(--primary)"
+        >
           {busy ? (
             <>
               <LoaderCircle size={17} className="spin" />
@@ -237,6 +257,16 @@ export default function Auth({
               <ArrowRight size={17} />
             </>
           )}
+        </StarBorder>
+        <button
+          type="button"
+          className="secondary auth-demo"
+          onClick={() => {
+            setDemo(true);
+            location.reload();
+          }}
+        >
+          Explore the demo — no account needed
         </button>
         <p className="auth-switch">
           {mode === "login" ? (
@@ -255,6 +285,9 @@ export default function Auth({
         <small className="muted">
           <LockKeyhole size={12} /> Your notes are private to your account.
         </small>
+        <a className="dev-link" href="#dev">
+          Developer sign-in
+        </a>
       </form>
     </div>
   );

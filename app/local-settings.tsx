@@ -6,6 +6,7 @@ import {
   localConfig,
   saveLocal,
   companion,
+  DEFAULT_OLLAMA_MODEL,
   type LocalConfig,
 } from "../lib/local-ai";
 import { api, download } from "../lib/client";
@@ -47,6 +48,31 @@ export function LocalSettings() {
             ? "Connector v2 paired. Now load models and test your chosen AI."
             : "Your connector is outdated. Download the new connector, restart it, and pair again.",
       );
+      if (!list && s.mode !== "cloud") {
+        // Discover what this computer actually has installed so the model
+        // field never keeps a model that is missing locally.
+        try {
+          const lm = await companion(
+            s.mode === "opencode" ? "/opencode/models" : "/models",
+            {},
+            s.pairing,
+          );
+          const found =
+            s.mode === "opencode"
+              ? lm.models.map((m: { id: string }) => m.id)
+              : lm.models;
+          if (found.length) {
+            setModels(found);
+            if (!s.model || !found.includes(s.model)) {
+              const next = { ...s, model: found[0] };
+              setS(next);
+              saveLocal(next);
+            }
+          }
+        } catch {
+          // Keep the manual model field usable if listing is unavailable.
+        }
+      }
       toast.success(
         list ? "Installed models loaded" : "Local connector connected",
       );
@@ -74,7 +100,12 @@ export function LocalSettings() {
             setS({
               ...s,
               mode: e.target.value as LocalConfig["mode"],
-              model: e.target.value === "opencode" ? "" : "gemma4:e2b",
+              model:
+                e.target.value === "ollama"
+                  ? DEFAULT_OLLAMA_MODEL
+                  : e.target.value === "opencode"
+                    ? ""
+                    : s.model,
             })
           }
         >

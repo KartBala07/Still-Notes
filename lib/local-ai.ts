@@ -3,6 +3,10 @@ export type LocalConfig = {
   model: string;
   pairing: string;
 };
+// A real, small, widely available Ollama model. `localConfig` is only a UI
+// default: the Settings screen replaces it with a model actually installed on
+// this computer as soon as installed models are listed.
+export const DEFAULT_OLLAMA_MODEL = "llama3.2:3b";
 let owner = "";
 let ownerRevision = 0;
 export function setLocalOwner(id: string) {
@@ -12,14 +16,30 @@ export function setLocalOwner(id: string) {
 export function localConfig(): LocalConfig {
   try {
     const s = JSON.parse(localStorage.getItem("still-local-" + owner) || "{}");
+    const mode = ["cloud", "ollama", "opencode"].includes(s.mode)
+      ? s.mode
+      : "cloud";
+    // OpenCode models are always provider/model, so never seed those with an
+    // Ollama tag; only Ollama gets a sensible default.
+    const fallback = mode === "ollama" ? DEFAULT_OLLAMA_MODEL : "";
     return {
-      mode: ["cloud", "ollama", "opencode"].includes(s.mode) ? s.mode : "cloud",
-      model: typeof s.model === "string" ? s.model : "gemma4:e2b",
+      mode,
+      model: typeof s.model === "string" && s.model ? s.model : fallback,
       pairing: sessionStorage.getItem("still-pair-" + owner) || "",
     };
   } catch {
-    return { mode: "cloud", model: "gemma4:e2b", pairing: "" };
+    return { mode: "cloud", model: "", pairing: "" };
   }
+}
+/** Installed models for the current local mode, straight from the connector. */
+export async function listLocalModels(
+  mode: LocalConfig["mode"],
+  pairing = localConfig().pairing,
+): Promise<string[]> {
+  const r = await companion(mode === "opencode" ? "/opencode/models" : "/models", {}, pairing);
+  return r.models.map((m: { id: string } | string) =>
+    typeof m === "string" ? m : m.id,
+  );
 }
 export function saveLocal(config: LocalConfig) {
   if (!owner) throw Error("Sign in first");
