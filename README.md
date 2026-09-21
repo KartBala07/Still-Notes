@@ -6,7 +6,7 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 
 - Email/password accounts; each person has private lessons, study sets, calendar events and results.
 - Light, dark and system themes; desktop sidebar, keyboard shortcuts and responsive layouts.
-- Microphone recording in standalone 10-minute clips, downloadable backups, Fish Audio transcription and optional read-aloud.
+- Microphone recording in standalone 10-minute clips with free in-browser live speech-to-text (Chrome, Edge or Safari), downloadable backups, optional Fish Audio transcription and optional read-aloud.
 - PDF, DOCX, text, Markdown, CSV and subtitle imports. Public Google Docs/Sheets links and YouTube captions where accessible. Private Google files work through downloaded exports. Scanned PDFs need OCR before import.
 - Groq, xAI Grok, DeepSeek and OpenRouter settings, separate encrypted keys per provider, live model lists and connection checks. DeepSeek is paid; OpenRouter offers a separate free-model router subject to its limits.
 - Refreshed glass dashboard, daily original study thoughts, attributed landscape photography and scroll reveals that respect reduced motion.

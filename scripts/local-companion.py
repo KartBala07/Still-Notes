@@ -43,7 +43,7 @@ def local_model(body):
     if provider!='opencode':raise ValueError('Choose Ollama or OpenCode')
     # An isolated temporary session, all tools denied, and an explicit model.
     # OpenCode is local software; the selected provider may still be a cloud model.
-    if '/' not in model:raise ValueError('For OpenCode use provider/model, such as ollama/gemma4:e2b')
+    if '/' not in model:raise ValueError('For OpenCode use provider/model, such as ollama/llama3.2:3b')
     provider_id,model_id=model.split('/',1)
     headers={}
     if os.getenv('OPENCODE_SERVER_PASSWORD'):
@@ -271,7 +271,16 @@ def canvas_action(path,data):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
-    def authorized_origin(self):return self.headers.get('Host') in ('127.0.0.1:'+str(PORT),'localhost:'+str(PORT)) and self.headers.get('Origin') in ORIGINS
+    def authorized_origin(self):
+        if self.headers.get('Host') not in ('127.0.0.1:'+str(PORT),'localhost:'+str(PORT)):return False
+        origin=self.headers.get('Origin') or ''
+        if origin in ORIGINS:return True
+        # Allow the site during local development. Only loopback origins are
+        # accepted and every request still requires the pairing code, so this
+        # does not widen access beyond this computer.
+        parts=urllib.parse.urlsplit(origin)
+        return (parts.scheme in ('http','https') and parts.hostname in ('127.0.0.1','localhost','::1')
+                and not parts.username and not parts.password)
     def send(self,status,data):
         raw=json.dumps(data).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(raw)))
         if self.authorized_origin():self.send_header('Access-Control-Allow-Origin',self.headers['Origin']);self.send_header('Vary','Origin')

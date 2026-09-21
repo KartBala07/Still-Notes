@@ -8,12 +8,12 @@ export const providers = {
   grok: {
     name: "xAI Grok",
     base: "https://api.x.ai/v1",
-    model: "grok-4-1-fast-reasoning",
+    model: "grok-4.3",
   },
   deepseek: {
     name: "DeepSeek",
     base: "https://api.deepseek.com",
-    model: "deepseek-flash",
+    model: "deepseek-v4-flash",
   },
   openrouter: {
     name: "OpenRouter",

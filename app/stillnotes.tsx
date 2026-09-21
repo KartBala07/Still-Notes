@@ -3,6 +3,7 @@ import Auth from "./auth";
 import School from "./school";
 import { LocalSettings, ToneSettings } from "./local-settings";
 import { setLocalOwner, forgetLocal } from "../lib/local-ai";
+import { createLiveSpeech, speechSupported, type LiveSpeech } from "../lib/speech";
 import Dashboard, { usePageMotion } from "./dashboard";
 import { providers } from "../lib/ai-providers";
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -1122,11 +1123,16 @@ function ImportLesson({
     [busy, setBusy] = useState(""),
     [recording, setRecording] = useState(false),
     [seconds, setSeconds] = useState(0),
-    [clips, setClips] = useState<Blob[]>([]);
+    [clips, setClips] = useState<Blob[]>([]),
+    [interim, setInterim] = useState(""),
+    [live, setLive] = useState(true),
+    [liveSupported, setLiveSupported] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null),
     stream = useRef<MediaStream | null>(null),
     active = useRef(false),
+    speech = useRef<LiveSpeech | null>(null),
     segmentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => setLiveSupported(speechSupported()), []);
   useEffect(() => {
     if (!recording) return;
     const t = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -1143,6 +1149,8 @@ function ImportLesson({
     return () => {
       active.current = false;
       if (segmentTimer.current) clearTimeout(segmentTimer.current);
+      speech.current?.stop();
+      speech.current = null;
       if (recorder.current?.state === "recording") recorder.current.stop();
       stream.current?.getTracks().forEach((t) => t.stop());
       window.removeEventListener("beforeunload", warn);
@@ -1172,6 +1180,16 @@ function ImportLesson({
       setBusy("");
     }
   }
+  function appendTranscript(chunk: string) {
+    const clean = chunk.trim();
+    if (!clean) return;
+    setText((old) => {
+      const needsSpace = old.length > 0 && !/\s$/.test(old);
+      return old + (needsSpace ? " " : "") + clean + " ";
+    });
+    setSource((old) => (old === "Written note" ? "Live transcription" : old));
+    setTitle((old) => old || "Lecture · " + new Date().toLocaleDateString());
+  }
   function startSegment() {
     if (!stream.current || !active.current) return;
     const type = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(
@@ -1200,13 +1218,29 @@ function ImportLesson({
       10 * 60 * 1000,
     );
   }
+  function stopListening() {
+    active.current = false;
+    setRecording(false);
+    setInterim("");
+    if (segmentTimer.current) clearTimeout(segmentTimer.current);
+    if (recorder.current?.state === "recording") recorder.current.stop();
+    speech.current?.stop();
+    speech.current = null;
+  }
   async function record() {
     if (active.current) {
-      active.current = false;
-      setRecording(false);
-      if (segmentTimer.current) clearTimeout(segmentTimer.current);
-      recorder.current?.stop();
+      stopListening();
       return;
+    }
+    // Live transcription starts first and runs independently of the audio
+    // recorder, so text still appears when audio capture is unavailable.
+    if (live && liveSupported) {
+      speech.current = createLiveSpeech({
+        onFinal: appendTranscript,
+        onInterim: setInterim,
+        onError: (message) => toast.error(message),
+      });
+      speech.current?.start();
     }
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({
@@ -1216,9 +1250,20 @@ function ImportLesson({
       setRecording(true);
       startSegment();
     } catch {
-      toast.error(
-        "Microphone access was denied or is unavailable. Allow it in your browser’s site settings.",
-      );
+      if (live && liveSupported && speech.current) {
+        active.current = true;
+        setRecording(true);
+        toast.message("Live text is running", {
+          description:
+            "Audio capture is unavailable, so this session will not be saved as an audio clip. The transcript still appears in Source text.",
+        });
+      } else {
+        speech.current?.stop();
+        speech.current = null;
+        toast.error(
+          "Microphone access was denied or is unavailable. Allow it in your browser’s site settings.",
+        );
+      }
     }
   }
   return (
@@ -1297,6 +1342,27 @@ function ImportLesson({
               {recording ? <Square size={16} /> : <Mic size={16} />}{" "}
               {recording ? "Stop recording" : "Start recording"}
             </button>
+            {liveSupported ? (
+              <label className="check-row compact">
+                <Checkbox
+                  checked={live}
+                  disabled={recording}
+                  onCheckedChange={(v) => setLive(!!v)}
+                />
+                Live speech-to-text (free, on this device)
+              </label>
+            ) : (
+              <p className="hint">
+                Live transcription needs Chrome, Edge or Safari. You can still
+                record audio and transcribe a clip below.
+              </p>
+            )}
+            {(recording || interim) && (
+              <p className="hint live-transcript" aria-live="polite">
+                {interim ||
+                  "Listening… the words appear in Source text as you speak."}
+              </p>
+            )}
             <small>
               Check that your teacher permits recording. Audio is saved in
               separate 10-minute clips.

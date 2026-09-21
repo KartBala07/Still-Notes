@@ -1,0 +1,6 @@
+.rb-shiny-text {
+  display: inline-block;
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+}

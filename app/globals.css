@@ -944,6 +944,13 @@ blockquote {
   background: var(--primary);
   animation: pulse 1.5s infinite;
 }
+.live-transcript {
+  text-align: center;
+  max-width: 56ch;
+  min-height: 20px;
+  color: var(--foreground);
+  font-style: italic;
+}
 .clip {
   display: flex;
   align-items: center;
@@ -1616,6 +1623,28 @@ blockquote {
 }
 .auth-story h1 > span {
   color: var(--primary);
+}
+.auth-story h1 > .auth-hero-line {
+  color: var(--foreground);
+  display: flex;
+  margin: 0;
+}
+.auth-story h1 > .auth-hero-accent {
+  display: inline-flex;
+  width: fit-content;
+}
+.auth-card .rb-star-border {
+  margin-top: 9px;
+  width: 100%;
+}
+.auth-card .rb-star-border-inner {
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-size: 15px;
+}
+.rb-star-border:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 .auth-story > p {
   font-size: 16px;
