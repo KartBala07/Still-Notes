@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { api, download } from "../lib/client";
 import { providers } from "../lib/ai-providers";
 import { companion, localConfig, saveLocal, DEFAULT_OLLAMA_MODEL } from "../lib/local-ai";
+import { setLocalPrefs } from "../lib/prefs";
 import type { Settings, User } from "../lib/types";
 
 const KEY_LINKS: Record<Settings["provider"], { href: string; label: string }> = {
@@ -54,17 +55,25 @@ export default function Onboarding({
   }
 
   async function complete() {
-    setBusy(true);
+    // Close right away and remember the choice on this device, then sync it to
+    // the account. The interface must never trap someone because a deployed
+    // backend has not learned a newer settings field yet.
+    setLocalPrefs(user.id, { onboarded: true });
+    onSave({ ...user, settings: { ...user.settings, onboarded: true } });
     try {
       const r = await api<{ user: User }>("settings", "PUT", {
         ...user.settings,
         onboarded: true,
       });
-      onSave(r.user);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(false);
+      onSave({
+        ...r.user,
+        settings: { ...r.user.settings, onboarded: true },
+      });
+    } catch {
+      toast.message("Saved on this device", {
+        description:
+          "Your account will sync this preference once the server is updated.",
+      });
     }
   }
 

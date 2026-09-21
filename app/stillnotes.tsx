@@ -5,6 +5,7 @@ import { LocalSettings, ToneSettings } from "./local-settings";
 import Onboarding from "./onboarding";
 import DevConsole from "./dev";
 import { devRoute } from "../lib/admin";
+import { localPrefs, setLocalPrefs } from "../lib/prefs";
 import { setLocalOwner, forgetLocal } from "../lib/local-ai";
 import { createLiveSpeech, speechSupported, type LiveSpeech } from "../lib/speech";
 import { demoActive, setDemo } from "../lib/demo";
@@ -212,7 +213,11 @@ export default function StillNotes() {
     [focusSeconds, setFocusSeconds] = useState(25 * 60),
     [devView, setDevView] = useState(false);
   const theme = user?.settings.theme || "system";
-  const accent = user?.settings.accent || "sage";
+  const prefs = user ? localPrefs(user.id) : {};
+  const accent =
+    user?.settings.accent ||
+    (prefs.accent as Settings["accent"] | undefined) ||
+    "sage";
   const [resetToken, setResetToken] = useState(() =>
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.hash.slice(1)).get("reset") || ""
@@ -1136,7 +1141,7 @@ export default function StillNotes() {
         </AlertDialogContent>
       </AlertDialog>
       {user.settings.brainrot && <Brainrot user={user} onSave={setUser} />}
-      {user && !user.settings.onboarded && (
+      {user && !user.settings.onboarded && !prefs.onboarded && (
         <Onboarding user={user} onSave={setUser} />
       )}
       <Toaster position="bottom-right" richColors />
@@ -1648,7 +1653,18 @@ function SettingsView({
   onSave: (u: User) => void;
   onLogout: () => void;
 }) {
-  const [s, setS] = useState({ ...defaultSettings, ...user.settings }),
+  const [s, setS] = useState<Settings>(() => {
+      const p = localPrefs(user.id);
+      return {
+        ...defaultSettings,
+        ...user.settings,
+        accent:
+          user.settings.accent ||
+          (p.accent as Settings["accent"]) ||
+          "sage",
+        onboarded: user.settings.onboarded || p.onboarded,
+      };
+    }),
     [aiKey, setAiKey] = useState(""),
     [fishKey, setFishKey] = useState(""),
     [clearAi, setClearAi] = useState(false),
@@ -1667,7 +1683,12 @@ function SettingsView({
       clearFish,
     });
     onSave(r.user);
-    setS(r.user.settings);
+    setLocalPrefs(user.id, { accent: s.accent, theme: s.theme });
+    setS({
+      ...r.user.settings,
+      accent: r.user.settings.accent || s.accent,
+      onboarded: r.user.settings.onboarded || s.onboarded,
+    });
     setAiKey("");
     setFishKey("");
     setClearAi(false);
@@ -1721,7 +1742,12 @@ function SettingsView({
               clearFish,
             });
             onSave(r.user);
-            setS(r.user.settings);
+            setLocalPrefs(user.id, { accent: s.accent, theme: s.theme });
+            setS({
+              ...r.user.settings,
+              accent: r.user.settings.accent || s.accent,
+              onboarded: r.user.settings.onboarded || s.onboarded,
+            });
             setAiKey("");
             setFishKey("");
             setClearAi(false);
@@ -1918,6 +1944,7 @@ function SettingsView({
                 }
                 onClick={() => {
                   setS({ ...s, accent: value });
+                  setLocalPrefs(user.id, { accent: value });
                   document.documentElement.dataset.accent = value;
                 }}
               >
