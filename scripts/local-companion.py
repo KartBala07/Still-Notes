@@ -18,13 +18,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise ValueError('Unexpected redirect refused')
 OPENER = urllib.request.build_opener(NoRedirect)
-def upstream(url, body=None, headers=None, method=None):
+def upstream(url, body=None, headers=None, method=None, limit=6000000):
     req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
         headers={'Content-Type':'application/json','User-Agent':'StillNotes-Local/1.0',**(headers or {})},method=method)
     try:
         with OPENER.open(req, timeout=180) as res:
-            data=res.read(6000001)
-            if len(data)>6000000:raise ValueError('Response too large; sync fewer courses')
+            data=res.read(limit+1)
+            if len(data)>limit:raise ValueError('The local service returned too much data for one request.')
             return json.loads(data or 'null'),res.headers
     except urllib.error.HTTPError as e:
         raise ValueError('Service returned HTTP '+str(e.code)+'. Check the selected model or Canvas token.') from None
@@ -126,7 +126,8 @@ def opencode_headers():
     pair=(os.getenv('OPENCODE_SERVER_USERNAME','opencode')+':'+os.environ['OPENCODE_SERVER_PASSWORD']).encode()
     return {'Authorization':'Basic '+base64.b64encode(pair).decode()}
 def opencode_models():
-    result,_=upstream('http://127.0.0.1:4096/provider',headers=opencode_headers())
+    # The provider catalogue can be several megabytes, so allow a larger read.
+    result,_=upstream('http://127.0.0.1:4096/provider',headers=opencode_headers(),limit=40000000)
     connected=set(result.get('connected',[]));models=[]
     for provider in result.get('all',[]):
         if provider.get('id') not in connected:continue
