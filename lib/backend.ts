@@ -47,6 +47,7 @@ export function createHandler(runtime: BackendRuntime) {
     slang: false,
     brainrot: false,
     theme: "system",
+    accent: "sage",
   };
   const text = z.string().trim().min(1).max(90000);
   const settingsSchema = z.object({
@@ -61,6 +62,7 @@ export function createHandler(runtime: BackendRuntime) {
       .refine((s) => !s || !!youtubeId(s))
       .optional(),
     theme: z.enum(["light", "dark", "system"]),
+    accent: z.enum(["sage", "rose", "ember", "ocean", "mono"]).optional(),
     aiKey: z.string().max(300).optional(),
     fishKey: z.string().max(300).optional(),
     clearAi: z.boolean().optional(),

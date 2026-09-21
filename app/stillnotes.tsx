@@ -113,6 +113,7 @@ const defaultSettings: Settings = {
   slang: false,
   brainrot: false,
   theme: "system",
+  accent: "sage",
 };
 function SelectBox({
   value,
@@ -189,6 +190,7 @@ export default function StillNotes() {
     [focus, setFocus] = useState(false),
     [focusSeconds, setFocusSeconds] = useState(25 * 60);
   const theme = user?.settings.theme || "system";
+  const accent = user?.settings.accent || "sage";
   const [resetToken, setResetToken] = useState(() =>
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.hash.slice(1)).get("reset") || ""
@@ -214,6 +216,9 @@ export default function StillNotes() {
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+  }, [accent]);
   const refresh = useCallback(
     async () => setData(await api<Data>("state")),
     [],
@@ -1854,6 +1859,44 @@ function SettingsView({
             ]}
           />
         </label>
+        <div className="accent-picker">
+          <span className="accent-picker-label">Colour</span>
+          <div className="accent-swatches" role="radiogroup" aria-label="Colour theme">
+            {(
+              [
+                ["sage", "Sage"],
+                ["rose", "Rose"],
+                ["ember", "Ember"],
+                ["ocean", "Ocean"],
+                ["mono", "Mono"],
+              ] as [Settings["accent"], string][]
+            ).map(([value, name]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={s.accent === value}
+                aria-label={name}
+                title={name}
+                className={
+                  "accent-swatch accent-" +
+                  value +
+                  (s.accent === value ? " active" : "")
+                }
+                onClick={() => {
+                  setS({ ...s, accent: value });
+                  document.documentElement.dataset.accent = value;
+                }}
+              >
+                <span>{name}</span>
+              </button>
+            ))}
+          </div>
+          <p className="hint">
+            Each colour has its own light and dark treatment. Appearance above
+            chooses light, dark or your device setting.
+          </p>
+        </div>
         <label className="switch-row">
           <div>
             <strong>Gen Z mode</strong>
