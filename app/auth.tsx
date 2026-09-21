@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { api, setSession } from "../lib/client";
+import { setDemo } from "../lib/demo";
 import type { User } from "../lib/types";
 import BlurText from "../components/react-bits/BlurText";
 import GradientText from "../components/react-bits/GradientText";
@@ -257,6 +258,16 @@ export default function Auth({
             </>
           )}
         </StarBorder>
+        <button
+          type="button"
+          className="secondary auth-demo"
+          onClick={() => {
+            setDemo(true);
+            location.reload();
+          }}
+        >
+          Explore the demo — no account needed
+        </button>
         <p className="auth-switch">
           {mode === "login" ? (
             <>

@@ -63,6 +63,7 @@ export function createHandler(runtime: BackendRuntime) {
       .optional(),
     theme: z.enum(["light", "dark", "system"]),
     accent: z.enum(["sage", "rose", "ember", "ocean", "mono"]).optional(),
+    onboarded: z.boolean().optional(),
     aiKey: z.string().max(300).optional(),
     fishKey: z.string().max(300).optional(),
     clearAi: z.boolean().optional(),

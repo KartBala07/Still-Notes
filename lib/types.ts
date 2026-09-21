@@ -5,6 +5,6 @@ export type Deck={id:string;title:string;noteIds:string[];cards:Card[];questions
 export type Attempt={id:string;deckId:string;title:string;answers:number[];score:number;total:number;created:number;questions:Question[]};
 export type StudyEvent={id:string;title:string;date:string;noteId:string;done:boolean};
 export type Accent='sage'|'rose'|'ember'|'ocean'|'mono';
-export type Settings={provider:'groq'|'grok'|'deepseek'|'openrouter';model:string;voiceId:string;slang:boolean;brainrot:boolean;brainrotVideo?:string;theme:'light'|'dark'|'system';accent:Accent;hasAiKey?:boolean;hasFishKey?:boolean};
+export type Settings={provider:'groq'|'grok'|'deepseek'|'openrouter';model:string;voiceId:string;slang:boolean;brainrot:boolean;brainrotVideo?:string;theme:'light'|'dark'|'system';accent:Accent;onboarded?:boolean;hasAiKey?:boolean;hasFishKey?:boolean};
 export type User={id:string;email:string;name:string;settings:Settings};
 export type Data={notes:Note[];decks:Deck[];attempts:Attempt[];events:StudyEvent[]};

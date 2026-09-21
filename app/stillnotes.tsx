@@ -2,8 +2,10 @@
 import Auth from "./auth";
 import School from "./school";
 import { LocalSettings, ToneSettings } from "./local-settings";
+import Onboarding from "./onboarding";
 import { setLocalOwner, forgetLocal } from "../lib/local-ai";
 import { createLiveSpeech, speechSupported, type LiveSpeech } from "../lib/speech";
+import { demoActive, setDemo } from "../lib/demo";
 import Dashboard, { usePageMotion } from "./dashboard";
 import { providers } from "../lib/ai-providers";
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -115,6 +117,23 @@ const defaultSettings: Settings = {
   theme: "system",
   accent: "sage",
 };
+function DemoBanner() {
+  return (
+    <div className="demo-banner" role="status">
+      <Sparkles size={15} />
+      <span>Demo sandbox — nothing is saved and AI actions need a free account.</span>
+      <button
+        className="secondary"
+        onClick={() => {
+          setDemo(false);
+          location.reload();
+        }}
+      >
+        Exit demo
+      </button>
+    </div>
+  );
+}
 function SelectBox({
   value,
   onChange,
@@ -343,6 +362,7 @@ export default function StillNotes() {
     );
   return (
     <SidebarProvider>
+      {demoActive() && <DemoBanner />}
       <Sidebar className="app-sidebar">
         <SidebarHeader>
           <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
@@ -1106,6 +1126,9 @@ export default function StillNotes() {
         </AlertDialogContent>
       </AlertDialog>
       {user.settings.brainrot && <Brainrot user={user} onSave={setUser} />}
+      {user && !user.settings.onboarded && (
+        <Onboarding user={user} onSave={setUser} />
+      )}
       <Toaster position="bottom-right" richColors />
     </SidebarProvider>
   );
