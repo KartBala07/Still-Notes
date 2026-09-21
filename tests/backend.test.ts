@@ -13,7 +13,7 @@ const call=async(path:string,method='GET',body?:unknown,token?:string)=>{
 };
 before(async()=>{
  const output=await build({stdin:{contents:"import {handle} from './lib/server'; export default {fetch:handle};",resolveDir:process.cwd()},bundle:true,format:'esm',platform:'browser',external:['cloudflare:workers'],write:false});
- mf=new Miniflare({modules:true,script:output.outputFiles[0].text,compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{APP_ENCRYPTION_KEY:'test-only-secret-'.repeat(4),OWNER_BOOTSTRAP:JSON.stringify({id:'owner-test',email:'owner@example.test',name:'Owner',password:await passwordHash('owner-test-password'),keys:await seal({ai:'gsk_owner-test-key'},'test-only-secret-'.repeat(4))})}});
+ mf=new Miniflare({modules:true,script:output.outputFiles[0].text,compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB'],r2Buckets:['BUCKET'],bindings:{APP_ENCRYPTION_KEY:'test-only-secret-'.repeat(4),DEV_EMAIL:'dev@example.test',DEV_PASSWORD:'dev-test-password-9182',OWNER_BOOTSTRAP:JSON.stringify({id:'owner-test',email:'owner@example.test',name:'Owner',password:await passwordHash('owner-test-password'),keys:await seal({ai:'gsk_owner-test-key'},'test-only-secret-'.repeat(4))})}});
  db=await mf.getD1Database('DB');for(const file of (await readdir('drizzle')).filter(x=>x.endsWith('.sql')).sort()){const schema=await readFile('drizzle/'+file,'utf8');for(const statement of schema.split('--> statement-breakpoint').filter(x=>x.trim()))await db.prepare(statement).run();}
  const first=await call('auth/signup','POST',{email:'first@example.test',password:'test-password-8391',name:'First'});assert.equal(first.status,200);a=first.body;
  const second=await call('auth/signup','POST',{email:'second@example.test',password:'test-password-1927',name:'Second'});assert.equal(second.status,200);b=second.body;
@@ -73,3 +73,24 @@ test('local AI still enforces source ownership and citation checks; tone is opti
 
 import {schoolContract} from './school-contract';
 test('Worker planning, documents and coursework AI enforce private ownership and explicit actions',async()=>{await schoolContract(call,a.token,b.token)});
+
+test('developer console authenticates separately and manages accounts without exposing secrets',async()=>{
+ assert.equal((await call('admin/accounts')).status,401);
+ assert.equal((await call('admin/login','POST',{email:'dev@example.test',password:'wrong-password-12'})).status,401);
+ const login=await call('admin/login','POST',{email:'dev@example.test',password:'dev-test-password-9182'});assert.equal(login.status,200);const token=login.body.token;
+ assert.equal((await call('admin/accounts','GET',undefined,'not-a-real-token')).status,401);
+ const list=await call('admin/accounts','GET',undefined,token);assert.equal(list.status,200);
+ const target=list.body.accounts.find((x:any)=>x.email==='second@example.test');assert.ok(target&&target.id);
+ assert.ok(list.body.accounts.some((x:any)=>x.email==='first@example.test'));
+ const serialized=JSON.stringify(list.body);assert.ok(!serialized.includes('password')&&!serialized.includes('keys')&&!serialized.includes('gsk_'));
+ assert.ok(target.model&&typeof target.notes==='number');
+ assert.equal((await call('admin/content?id='+target.id,'GET',undefined,token)).status,200);
+ assert.equal((await call('admin/password','POST',{id:target.id,password:'temporary-pass-4471'},token)).status,200);
+ assert.equal((await call('auth/login','POST',{email:'second@example.test',password:'test-password-1927'})).status,401);
+ assert.equal((await call('auth/login','POST',{email:'second@example.test',password:'temporary-pass-4471'})).status,200);
+ assert.equal((await call('admin/suspend','POST',{id:target.id,suspended:true},token)).status,200);
+ assert.equal((await call('auth/login','POST',{email:'second@example.test',password:'temporary-pass-4471'})).status,403);
+ assert.equal((await call('admin/suspend','POST',{id:target.id,suspended:false},token)).status,200);
+ assert.equal((await call('admin/delete','POST',{id:target.id},token)).status,200);
+ const row=await db.prepare('SELECT count(*) AS n FROM users WHERE email=?').bind('second@example.test').first<{n:number}>();assert.equal(row!.n,0);
+});

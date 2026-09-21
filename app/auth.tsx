@@ -285,6 +285,9 @@ export default function Auth({
         <small className="muted">
           <LockKeyhole size={12} /> Your notes are private to your account.
         </small>
+        <a className="dev-link" href="#dev">
+          Developer sign-in
+        </a>
       </form>
     </div>
   );

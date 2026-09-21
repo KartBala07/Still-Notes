@@ -5,7 +5,8 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 ## Features
 
 - Email/password accounts; each person has private lessons, study sets, calendar events and results.
-- Light, dark and system themes; desktop sidebar, keyboard shortcuts and responsive layouts.
+- Light, dark and system appearance with five colour families (sage, rose, ember, ocean, mono), each with its own light and dark palette; desktop sidebar, keyboard shortcuts and responsive layouts.
+- A one-time setup wizard after sign-in that connects a cloud API key or a local Ollama model step by step, and a no-account demo sandbox.
 - Microphone recording in standalone 10-minute clips with free in-browser live speech-to-text (Chrome, Edge or Safari), downloadable backups, optional Fish Audio transcription and optional read-aloud.
 - PDF, DOCX, text, Markdown, CSV and subtitle imports. Public Google Docs/Sheets links and YouTube captions where accessible. Private Google files work through downloaded exports. Scanned PDFs need OCR before import.
 - Groq, xAI Grok, DeepSeek and OpenRouter settings, separate encrypted keys per provider, live model lists and connection checks. DeepSeek is paid; OpenRouter offers a separate free-model router subject to its limits.
@@ -56,6 +57,12 @@ npm run dev
 The server uses the Sites/Vinext build scripts supplied in this repository. `npm run db:generate` generates D1 migrations from `db/schema.ts`. Do not run schema creation at request time. The cloud host applies packaged migrations during deployment.
 
 Required runtime binding names: `DB` (D1), `BUCKET` (R2). Required secret: `APP_ENCRYPTION_KEY` (at least 32 random characters). `OWNER_BOOTSTRAP` optionally contains an owner ID, email, name, salted password digest and encrypted provider-key payload supplied through secret runtime configuration. The first API request creates that owner account idempotently; it never overwrites an existing account. Never put real keys, passwords or secrets in the repository. Per-user AI and Fish keys are encrypted with AES-GCM before persistence. Passwords use salted PBKDF2-SHA256; session tokens are stored only as SHA256 digests.
+
+## Developer console
+
+Set `DEV_EMAIL` and `DEV_PASSWORD` (at least 8 characters) as backend secrets to enable a separate owner console at `#dev` (for example `https://kartbala07.github.io/Still-Notes/#dev`). The console has its own sign-in and is not linked to any student account. `DEV_PASSWORD` is compared in constant time and the session is a short-lived token signed with `APP_ENCRYPTION_KEY`; it is never stored in the database. Leave the variables unset to disable the console entirely.
+
+The console lists every account with email, name, join date, the provider and model in use, lesson and deck counts and storage used, and can set a temporary password, suspend or reactivate, delete an account, and view a read-only copy of a learner's lessons and study sets. It never exposes passwords or API keys, and it is currently available on the D1/Worker backend only. Suspending an account signs out its active sessions and blocks new sign-ins; deleting an account removes its rows and recordings.
 
 ## Practical limits
 

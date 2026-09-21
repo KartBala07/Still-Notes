@@ -3,6 +3,8 @@ import Auth from "./auth";
 import School from "./school";
 import { LocalSettings, ToneSettings } from "./local-settings";
 import Onboarding from "./onboarding";
+import DevConsole from "./dev";
+import { devRoute } from "../lib/admin";
 import { setLocalOwner, forgetLocal } from "../lib/local-ai";
 import { createLiveSpeech, speechSupported, type LiveSpeech } from "../lib/speech";
 import { demoActive, setDemo } from "../lib/demo";
@@ -207,7 +209,8 @@ export default function StillNotes() {
     [deleteNote, setDeleteNote] = useState<Note | null>(null),
     [player, setPlayer] = useState<{ deck: Deck; mode: string } | null>(null),
     [focus, setFocus] = useState(false),
-    [focusSeconds, setFocusSeconds] = useState(25 * 60);
+    [focusSeconds, setFocusSeconds] = useState(25 * 60),
+    [devView, setDevView] = useState(false);
   const theme = user?.settings.theme || "system";
   const accent = user?.settings.accent || "sage";
   const [resetToken, setResetToken] = useState(() =>
@@ -238,6 +241,12 @@ export default function StillNotes() {
   useEffect(() => {
     document.documentElement.dataset.accent = accent;
   }, [accent]);
+  useEffect(() => {
+    const sync = () => setDevView(devRoute());
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
   const refresh = useCallback(
     async () => setData(await api<Data>("state")),
     [],
@@ -344,6 +353,7 @@ export default function StillNotes() {
         <Busy>Opening your workspace</Busy>
       </div>
     );
+  if (devView) return <DevConsole />;
   if (!user || resetToken)
     return (
       <>
