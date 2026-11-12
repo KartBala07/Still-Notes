@@ -1,5 +1,5 @@
 export type LocalConfig = {
-  mode: "cloud" | "ollama" | "opencode";
+  mode: "cloud" | "ollama" | "opencode" | "omlx";
   model: string;
   pairing: string;
 };
@@ -16,7 +16,7 @@ export function setLocalOwner(id: string) {
 export function localConfig(): LocalConfig {
   try {
     const s = JSON.parse(localStorage.getItem("still-local-" + owner) || "{}");
-    const mode = ["cloud", "ollama", "opencode"].includes(s.mode)
+    const mode = ["cloud", "ollama", "opencode", "omlx"].includes(s.mode)
       ? s.mode
       : "cloud";
     // OpenCode models are always provider/model, so never seed those with an
@@ -36,7 +36,11 @@ export async function listLocalModels(
   mode: LocalConfig["mode"],
   pairing = localConfig().pairing,
 ): Promise<string[]> {
-  const r = await companion(mode === "opencode" ? "/opencode/models" : "/models", {}, pairing);
+  const r = await companion(
+    mode === "opencode" ? "/opencode/models" : mode === "omlx" ? "/omlx/models" : "/models",
+    {},
+    pairing,
+  );
   return r.models.map((m: { id: string } | string) =>
     typeof m === "string" ? m : m.id,
   );
@@ -69,6 +73,9 @@ export async function companion(
       "/health",
       "/canvas",
       "/opencode/models",
+      "/omlx/models",
+      "/asr",
+      "/asr/status",
       "/canvas/connect",
       "/canvas/disconnect",
       "/canvas/sync",

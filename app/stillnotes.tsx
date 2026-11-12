@@ -8,6 +8,10 @@ import { devRoute } from "../lib/admin";
 import { localPrefs, setLocalPrefs } from "../lib/prefs";
 import { setLocalOwner, forgetLocal } from "../lib/local-ai";
 import { createLiveSpeech, speechSupported, type LiveSpeech } from "../lib/speech";
+import {
+  createLocalSpeech,
+  localSpeechReady,
+} from "../lib/local-speech";
 import { demoActive, setDemo } from "../lib/demo";
 import Dashboard, { usePageMotion } from "./dashboard";
 import { providers } from "../lib/ai-providers";
@@ -1169,13 +1173,24 @@ function ImportLesson({
     [clips, setClips] = useState<Blob[]>([]),
     [interim, setInterim] = useState(""),
     [live, setLive] = useState(true),
-    [liveSupported, setLiveSupported] = useState(false);
+    [liveSupported, setLiveSupported] = useState(false),
+    [localSpeech, setLocalSpeech] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null),
     stream = useRef<MediaStream | null>(null),
     active = useRef(false),
     speech = useRef<LiveSpeech | null>(null),
     segmentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => setLiveSupported(speechSupported()), []);
+  // Offline engine wins when the local companion has a model installed.
+  useEffect(() => {
+    let alive = true;
+    localSpeechReady().then((status) => {
+      if (alive) setLocalSpeech(status.ready);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   useEffect(() => {
     if (!recording) return;
     const t = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -1275,9 +1290,11 @@ function ImportLesson({
       stopListening();
       return;
     }
-    // Live transcription starts first and runs independently of the audio
-    // recorder, so text still appears when audio capture is unavailable.
-    if (live && liveSupported) {
+    // The browser engine starts before audio capture so text still appears when
+    // the microphone is busy. The offline engine needs the stream, so it starts
+    // once getUserMedia resolves.
+    const useLocal = live && localSpeech;
+    if (live && liveSupported && !useLocal) {
       speech.current = createLiveSpeech({
         onFinal: appendTranscript,
         onInterim: setInterim,
@@ -1289,6 +1306,14 @@ function ImportLesson({
       stream.current = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
+      if (useLocal) {
+        speech.current = createLocalSpeech({
+          stream: stream.current,
+          onFinal: appendTranscript,
+          onError: (message) => toast.error(message),
+        });
+        speech.current?.start();
+      }
       active.current = true;
       setRecording(true);
       startSegment();
@@ -1385,19 +1410,22 @@ function ImportLesson({
               {recording ? <Square size={16} /> : <Mic size={16} />}{" "}
               {recording ? "Stop recording" : "Start recording"}
             </button>
-            {liveSupported ? (
+            {liveSupported || localSpeech ? (
               <label className="check-row compact">
                 <Checkbox
                   checked={live}
                   disabled={recording}
                   onCheckedChange={(v) => setLive(!!v)}
                 />
-                Live speech-to-text (free, on this device)
+                {localSpeech
+                  ? "Live speech-to-text (offline, on this computer)"
+                  : "Live speech-to-text (free, on this device)"}
               </label>
             ) : (
               <p className="hint">
-                Live transcription needs Chrome, Edge or Safari. You can still
-                record audio and transcribe a clip below.
+                Live transcription needs Chrome, Edge or Safari, or the local
+                speech model from <code>scripts/install-speech.sh</code>. You can
+                still record audio and transcribe a clip below.
               </p>
             )}
             {(recording || interim) && (
