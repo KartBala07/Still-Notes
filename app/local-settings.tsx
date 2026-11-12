@@ -16,19 +16,14 @@ export function LocalSettings() {
     [models, setModels] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [status, setStatus] = useState("");
+  // oMLX (and any OpenAI-compatible server) lists models from its own route.
+  const modelsPath =
+    s.mode === "opencode" ? "/opencode/models" : s.mode === "omlx" ? "/omlx/models" : "/models";
   async function run(list = false) {
     setBusy(true);
     try {
       saveLocal(s);
-      const r = await companion(
-        list
-          ? s.mode === "opencode"
-            ? "/opencode/models"
-            : "/models"
-          : "/health",
-        {},
-        s.pairing,
-      );
+      const r = await companion(list ? modelsPath : "/health", {}, s.pairing);
       if (list) {
         const found =
           s.mode === "opencode"
@@ -52,11 +47,7 @@ export function LocalSettings() {
         // Discover what this computer actually has installed so the model
         // field never keeps a model that is missing locally.
         try {
-          const lm = await companion(
-            s.mode === "opencode" ? "/opencode/models" : "/models",
-            {},
-            s.pairing,
-          );
+          const lm = await companion(modelsPath, {}, s.pairing);
           const found =
             s.mode === "opencode"
               ? lm.models.map((m: { id: string }) => m.id)
@@ -103,7 +94,7 @@ export function LocalSettings() {
               model:
                 e.target.value === "ollama"
                   ? DEFAULT_OLLAMA_MODEL
-                  : e.target.value === "opencode"
+                  : e.target.value === "opencode" || e.target.value === "omlx"
                     ? ""
                     : s.model,
             })
@@ -112,8 +103,22 @@ export function LocalSettings() {
           <option value="cloud">Cloud provider below</option>
           <option value="ollama">Ollama · local models</option>
           <option value="opencode">OpenCode · local connector</option>
+          <option value="omlx">oMLX · OpenAI-compatible server</option>
         </select>
       </label>
+      {s.mode === "omlx" && (
+        <div className="local-guide">
+          <strong>oMLX setup</strong>
+          <p>
+            Point Still Notes at any OpenAI-compatible server on this Mac — oMLX,
+            LM Studio or llama.cpp. It defaults to oMLX on port 8000; override the
+            address and key with the <code>OMLX_BASE_URL</code> and{" "}
+            <code>OMLX_API_KEY</code> environment variables before starting the
+            connector.
+          </p>
+          <code>OMLX_BASE_URL=http://127.0.0.1:8000/v1 python3 scripts/local-companion.py</code>
+        </div>
+      )}
       {s.mode === "opencode" && (
         <div className="local-guide">
           <strong>OpenCode setup</strong>
@@ -177,7 +182,9 @@ export function LocalSettings() {
           <label>
             {s.mode === "ollama"
               ? "Installed Ollama model"
-              : "OpenCode provider/model"}
+              : s.mode === "omlx"
+                ? "Model served by oMLX"
+                : "OpenCode provider/model"}
             <input
               value={s.model}
               list="local-models"

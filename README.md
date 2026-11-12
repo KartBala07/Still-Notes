@@ -7,7 +7,7 @@ A responsive, glass-inspired cloud study workspace for desktop, Mac, tablets and
 - Email/password accounts; each person has private lessons, study sets, calendar events and results.
 - Light, dark and system appearance with five colour families (sage, rose, ember, ocean, mono), each with its own light and dark palette; desktop sidebar, keyboard shortcuts and responsive layouts.
 - A one-time setup wizard after sign-in that connects a cloud API key or a local Ollama model step by step, and a no-account demo sandbox.
-- Microphone recording in standalone 10-minute clips with free in-browser live speech-to-text (Chrome, Edge or Safari), downloadable backups, optional Fish Audio transcription and optional read-aloud.
+- Microphone recording in standalone 10-minute clips with free in-browser live speech-to-text (Chrome, Edge or Safari) **or fully offline speech-to-text through the local connector** (Vosk, no network, no vendor service), downloadable backups, optional Fish Audio transcription and optional read-aloud.
 - PDF, DOCX, text, Markdown, CSV and subtitle imports. Public Google Docs/Sheets links and YouTube captions where accessible. Private Google files work through downloaded exports. Scanned PDFs need OCR before import.
 - Groq, xAI Grok, DeepSeek and OpenRouter settings, separate encrypted keys per provider, live model lists and connection checks. DeepSeek is paid; OpenRouter offers a separate free-model router subject to its limits.
 - Refreshed glass dashboard, daily original study thoughts, attributed landscape photography and scroll reveals that respect reduced motion.
@@ -36,6 +36,29 @@ The owner account and encrypted provider credentials are configured in private r
 GitHub Pages is enabled using GitHub Actions. The frontend connects to the cloud backend through an explicit CORS allowlist for `https://kartbala07.github.io`. Public account sign-up was approved by the owner; study content is not made public.
 
 The hosted frontend uses an HttpOnly Secure SameSite=Lax session cookie. The cross-origin GitHub Pages frontend uses a bearer session kept in tab-scoped sessionStorage so it works when browsers block third-party cookies. Provider API keys and study content are not persisted in browser storage. Local model preferences are stored per account on each device; the connector pairing code lasts only for that tab.
+
+## Offline speech and local OpenAI-compatible models
+
+Two additions let a study session run with no cloud at all.
+
+**Offline live transcription.** Install it once, then start the connector with the wrapper it prints:
+
+```sh
+./scripts/install-speech.sh
+~/.still-notes/run-companion.sh
+```
+
+That fetches Vosk and a small English model into `~/.still-notes` (nothing is added to the
+connector's own dependencies — `vosk` stays optional). While recording, the browser decodes each
+~7-second slice with WebAudio, resamples it to 16 kHz mono PCM and posts it to the connector, which
+transcribes it on this computer. No audio leaves the machine and no vendor speech service is involved.
+If the model is missing the checkbox falls back to the browser engine, and the app says so.
+
+**OpenAI-compatible local models.** Choose *oMLX · OpenAI-compatible server* under Settings → Local AI
+to run study generation against oMLX, LM Studio or llama.cpp instead of Ollama. Defaults to
+`http://127.0.0.1:8000/v1`; set `OMLX_BASE_URL` and `OMLX_API_KEY` before starting the connector to
+change it. Only loopback addresses are accepted, the pairing code is still required, and reasoning
+(thinking) is disabled so the token budget goes to the answer.
 
 ## Canvas Pro integration and local AI
 

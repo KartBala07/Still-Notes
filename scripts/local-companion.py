@@ -40,7 +40,27 @@ def local_model(body):
         if not model or len(model)>150:raise ValueError('Choose an installed Ollama model')
         result,_=upstream('http://127.0.0.1:11434/api/chat',{'model':model,'messages':messages,'stream':False,'format':body.get('schema') or 'json','options':{'temperature':.2,'num_predict':7000}})
         return {'content':result.get('message',{}).get('content',''),'model':model}
-    if provider!='opencode':raise ValueError('Choose Ollama or OpenCode')
+    if provider=='omlx':
+        # Any OpenAI-compatible server on this computer (oMLX, LM Studio, llama.cpp).
+        base=os.getenv('OMLX_BASE_URL','http://127.0.0.1:8000/v1').rstrip('/')
+        if not re.fullmatch(r'http://(127\.0\.0\.1|localhost)(:\d+)?/v1',base):
+            raise ValueError('OMLX_BASE_URL must be an http loopback address ending in /v1')
+        if not model or len(model)>150:raise ValueError('Choose a model served by the local OpenAI-compatible server')
+        headers={}
+        if os.getenv('OMLX_API_KEY'):headers['Authorization']='Bearer '+os.environ['OMLX_API_KEY']
+        payload={'model':model,'messages':messages,'temperature':.2,'max_tokens':7000,
+                 'chat_template_kwargs':{'enable_thinking':False},'enable_thinking':False}
+        if body.get('schema'):payload['response_format']={'type':'json_object'}
+        try:
+            result,_=upstream(base+'/chat/completions',payload,headers)
+        except ValueError as e:
+            if '401' in str(e):raise ValueError('The local model server rejected the key. Set OMLX_API_KEY before starting the connector.') from None
+            raise
+        choices=result.get('choices') or []
+        content=(choices[0].get('message',{}) if choices else {}).get('content','')
+        if not isinstance(content,str) or not content.strip():raise ValueError('The local model returned no text. Check that it is loaded.')
+        return {'content':content,'model':model}
+    if provider!='opencode':raise ValueError('Choose Ollama, oMLX or OpenCode')
     # An isolated temporary session, all tools denied, and an explicit model.
     # OpenCode is local software; the selected provider may still be a cloud model.
     if '/' not in model:raise ValueError('For OpenCode use provider/model, such as ollama/llama3.2:3b')
@@ -270,6 +290,58 @@ def canvas_action(path,data):
         return {'submitted':result.get('workflow_state') in ('submitted','graded','pending_review'),'attempt':result.get('attempt'),'submittedAt':result.get('submitted_at')}
     raise ValueError('Unknown Canvas action')
 
+# ---- local speech to text -------------------------------------------------
+# Optional: uses Vosk when it is installed on this computer. The browser sends
+# 16 kHz mono 16-bit PCM (decoded with WebAudio), so no ffmpeg is needed and no
+# audio ever leaves the machine.
+ASR_MODEL = None
+ASR_MODEL_NAME = ''
+ASR_LOCK = threading.Lock()
+def speech_model_path():
+    return os.getenv('VOSK_MODEL') or os.path.join(os.path.expanduser('~'),'.still-notes','vosk-model')
+def load_speech_model():
+    global ASR_MODEL, ASR_MODEL_NAME
+    if ASR_MODEL is not None:return ASR_MODEL
+    path=speech_model_path()
+    if not os.path.isdir(path):
+        raise LookupError('Local speech needs a model. Run scripts/install-speech.sh once, then try again.')
+    try:
+        from vosk import Model, SetLogLevel
+    except ImportError:
+        raise LookupError('Local speech needs the optional vosk package. Run scripts/install-speech.sh once.') from None
+    SetLogLevel(-1)  # keep the connector quiet; model internals are not user output
+    ASR_MODEL=Model(path);ASR_MODEL_NAME=os.path.basename(path)
+    return ASR_MODEL
+def asr_status():
+    try:
+        load_speech_model()
+        return {'ready':True,'model':ASR_MODEL_NAME}
+    except LookupError as e:
+        return {'ready':False,'error':str(e)}
+def tidy_speech(text):
+    text=' '.join(str(text).split())
+    if not text:return ''
+    text=text.replace(' i ',' I ').replace(" i'"," I'")
+    if text.startswith('i '):text='I '+text[2:]
+    text=text[0].upper()+text[1:]
+    return text if text[-1] in '.!?' else text+'.'
+def asr_transcribe(body):
+    raw=base64.b64decode(str(body.get('audio','')),validate=True)
+    if not raw or len(raw)%2:raise ValueError('Send 16-bit mono PCM audio')
+    if len(raw)>1500000:raise ValueError('Keep each slice under about 45 seconds')
+    model=load_speech_model()
+    import io,wave,json as _json
+    from vosk import KaldiRecognizer
+    buffer=io.BytesIO()
+    with wave.open(buffer,'wb') as wav:
+        wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000);wav.writeframes(raw)
+    with ASR_LOCK:
+        rec=KaldiRecognizer(model,16000);rec.SetWords(False)
+        data=buffer.getvalue()
+        for i in range(0,len(data),32000):rec.AcceptWaveform(data[i:i+32000])
+        result=_json.loads(rec.FinalResult())
+    return {'text':tidy_speech(result.get('text','')),'model':ASR_MODEL_NAME}
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def authorized_origin(self):
@@ -294,17 +366,31 @@ class Handler(BaseHTTPRequestHandler):
         if not BUSY.acquire(blocking=False):return self.send(429,{'error':'A local request is already running. Try again shortly.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
-            if size<1 or size>(30000000 if self.path=='/canvas/submit' else 1500000):raise ValueError('Request is too large')
+            limit=30000000 if self.path=='/canvas/submit' else 2100000 if self.path=='/asr' else 1500000
+            if size<1 or size>limit:raise ValueError('Request is too large')
             data=json.loads(self.rfile.read(size))
-            if self.path=='/health':out={'ok':True,'version':2}
+            if self.path=='/health':out={'ok':True,'version':3}
+            elif self.path=='/asr/status':out=asr_status()
+            elif self.path=='/omlx/models':
+                base=os.getenv('OMLX_BASE_URL','http://127.0.0.1:8000/v1').rstrip('/')
+                if not re.fullmatch(r'http://(127\.0\.0\.1|localhost)(:\d+)?/v1',base):raise ValueError('OMLX_BASE_URL must be an http loopback address ending in /v1')
+                headers={'Authorization':'Bearer '+os.environ['OMLX_API_KEY']} if os.getenv('OMLX_API_KEY') else {}
+                try:
+                    rows,_=upstream(base+'/models',headers=headers)
+                except ValueError as e:
+                    if '401' in str(e):raise ValueError('The local model server rejected the key. Set OMLX_API_KEY before starting the connector.') from None
+                    raise
+                out={'models':[m.get('id') for m in rows.get('data',[]) if m.get('id')]}
             elif self.path=='/models':
                 rows,_=upstream('http://127.0.0.1:11434/api/tags');out={'models':[m['name'] for m in rows.get('models',[])]}
             elif self.path=='/opencode/models':out=opencode_models()
             elif self.path.startswith('/canvas/') :out=canvas_action(self.path,data)
+            elif self.path=='/asr':out=asr_transcribe(data)
             elif self.path=='/generate':out=local_model(data)
             elif self.path=='/canvas':out=canvas_sync(data)
             else:return self.send(404,{'error':'Not found'})
             self.send(200,out)
+        except LookupError as e:self.send(503,{'error':str(e)[:240]})
         except (ValueError,KeyError,TypeError) as e:self.send(400,{'error':str(e)[:240]})
         except Exception:self.send(502,{'error':'Local service could not complete the request'})
         finally:BUSY.release()

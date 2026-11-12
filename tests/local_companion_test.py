@@ -1,4 +1,4 @@
-import importlib.util, json, threading, unittest, http.client
+import base64, importlib.util, json, threading, unittest, http.client
 from pathlib import Path
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('companion',Path(__file__).resolve().parents[1]/'scripts/local-companion.py')
@@ -41,6 +41,35 @@ class ConnectorTest(unittest.TestCase):
         with patch.object(c,'upstream',side_effect=[({'id':1},{}),([] ,{'Link':'<https://evil.test/api/v1/courses>; rel="next"'})]) as mock:
             with self.assertRaisesRegex(ValueError,'Unsafe pagination'):c.canvas_sync({'base':'https://school.instructure.com','token':'fixture-only'})
             self.assertEqual(mock.call_count,2)
+    def test_omlx_generate_uses_loopback_payload(self):
+        with patch.object(c,'upstream',return_value=({'choices':[{'message':{'content':'{"summary":"ok"}'}}]},{})) as mock:
+            out=c.local_model({'provider':'omlx','model':'Qwen3.5-9B-MLX-4bit','messages':[{'role':'user','content':'Private text'}]})
+            self.assertEqual(out['content'],'{"summary":"ok"}')
+            url,body,headers=mock.call_args.args
+            self.assertEqual(url,'http://127.0.0.1:8000/v1/chat/completions')
+            self.assertEqual(headers,{})
+            self.assertFalse(body['enable_thinking'])
+            self.assertEqual(body['chat_template_kwargs'],{'enable_thinking':False})
+    def test_omlx_refuses_remote_base(self):
+        with patch.dict('os.environ',{'OMLX_BASE_URL':'https://evil.test/v1'}):
+            with self.assertRaisesRegex(ValueError,'loopback'):
+                c.local_model({'provider':'omlx','model':'x','messages':[{'role':'user','content':'hi'}]})
+    def test_speech_endpoint_requires_a_model(self):
+        with patch.object(c,'speech_model_path',return_value='/nonexistent/vosk-model'):
+            conn=http.client.HTTPConnection('127.0.0.1',c.PORT,timeout=3)
+            body=json.dumps({'audio':base64.b64encode(b'\x00\x00'*8000).decode()})
+            conn.request('POST','/asr',body=body,headers={'Host':'127.0.0.1:'+str(c.PORT),'Origin':'https://kartbala07.github.io','X-Still-Pairing':c.PAIRING,'Content-Type':'application/json'})
+            r=conn.getresponse();payload=json.loads(r.read());conn.close()
+            self.assertEqual(r.status,503)
+            self.assertIn('install-speech.sh',payload['error'])
+    def test_speech_rejects_odd_pcm(self):
+        with patch.object(c,'speech_model_path',return_value='/nonexistent/vosk-model'):
+            with self.assertRaisesRegex(ValueError,'16-bit mono'):
+                c.asr_transcribe({'audio':base64.b64encode(b'\x00\x00\x00').decode()})
+    def test_speech_text_is_tidied(self):
+        self.assertEqual(c.tidy_speech('  the chi square test is important  '),'The chi square test is important.')
+        self.assertEqual(c.tidy_speech('i think so'),'I think so.')
+        self.assertEqual(c.tidy_speech(''),'')
     def test_upstream_redirect_is_refused(self):
         with self.assertRaises(ValueError):c.NoRedirect().redirect_request(None,None,302,'',{},'https://evil.test')
 
